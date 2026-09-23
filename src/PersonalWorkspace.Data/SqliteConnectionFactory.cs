@@ -6,10 +6,14 @@ namespace PersonalWorkspace.Data;
 public sealed class SqliteConnectionFactory(IApplicationPaths paths)
 {
     public async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken = default)
+        => await OpenDatabaseAsync(paths.Database, true, cancellationToken);
+
+    internal static async Task<SqliteConnection> OpenDatabaseAsync(string database, bool create, CancellationToken cancellationToken)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
-            DataSource = paths.Database,
+            DataSource = database,
+            Mode = create ? SqliteOpenMode.ReadWriteCreate : SqliteOpenMode.ReadWrite,
             ForeignKeys = true,
             DefaultTimeout = 10,
             Pooling = false
@@ -17,6 +21,7 @@ public sealed class SqliteConnectionFactory(IApplicationPaths paths)
         try
         {
             await connection.OpenAsync(cancellationToken);
+            connection.CreateCollation("PROFILE_NAME", (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left, right));
             return connection;
         }
         catch

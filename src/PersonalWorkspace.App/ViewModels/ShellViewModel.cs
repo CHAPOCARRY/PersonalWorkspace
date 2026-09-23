@@ -21,11 +21,14 @@ public sealed partial class ShellViewModel : ObservableObject
     public string Description { get => description; private set => SetProperty(ref description, value); }
     public string? ErrorMessage { get => errorMessage; private set => SetProperty(ref errorMessage, value); }
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger)
+    public ProfilesViewModel Profiles { get; }
+
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles)
     {
         this.settings = settings;
         this.navigation = navigation;
         this.logger = logger;
+        Profiles = profiles;
         navigation.Changed += (_, _) => UpdateDestination();
     }
 
@@ -35,7 +38,11 @@ public sealed partial class ShellViewModel : ObservableObject
         UpdateDestination();
     }
 
-    public void Navigate(string destination) => navigation.Navigate(new NavigationRoute(destination));
+    public void Navigate(string destination)
+    {
+        Profiles.CloseManagementCommand.Execute(null);
+        navigation.Navigate(new NavigationRoute(destination));
+    }
 
     [RelayCommand]
     private async Task ToggleSidebarAsync()

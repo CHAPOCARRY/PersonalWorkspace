@@ -38,7 +38,7 @@ public sealed class InfrastructureTests : IDisposable
         using var reader = await command.ExecuteReaderAsync();
         var tables = new List<string>();
         while (await reader.ReadAsync()) tables.Add(reader.GetString(0));
-        Assert.Equal(new[] { "AppSettings", "SchemaMigrations" }, tables);
+        Assert.Equal(new[] { "AppSettings", "Profiles", "SchemaMigrations" }, tables);
     }
 
     [Fact]
@@ -88,14 +88,14 @@ public sealed class InfrastructureTests : IDisposable
     public async Task FailedMigrationRollsBackSchemaAndHistory()
     {
         await Initializer().InitializeAsync();
-        var failing = MigrationCatalog.All.Concat(new[] { new DatabaseMigration(2, "Failure", "CREATE TABLE ShouldRollback (Id INTEGER); INVALID SQL;") });
+        var failing = MigrationCatalog.All.Concat(new[] { new DatabaseMigration(3, "Failure", "CREATE TABLE ShouldRollback (Id INTEGER); INVALID SQL;") });
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => Initializer(failing).InitializeAsync());
         await using var connection = await connections.OpenAsync();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name = 'ShouldRollback';";
         Assert.Equal(0L, await command.ExecuteScalarAsync());
         command.CommandText = "SELECT COUNT(*) FROM SchemaMigrations;";
-        Assert.Equal(1L, await command.ExecuteScalarAsync());
+        Assert.Equal(2L, await command.ExecuteScalarAsync());
     }
 
     [Fact]

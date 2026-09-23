@@ -18,6 +18,15 @@ public sealed class ApplicationPaths : IApplicationPaths
     public string Logs => Path.Combine(Root, "Logs");
     public string Backups => Path.Combine(Root, "Backups");
     public string Profiles => Path.Combine(Root, "Profiles");
+    public string InstanceLock => Path.Combine(Root, "application.lock");
+
+    public string ProfileDirectory(Guid profileId)
+    {
+        if (profileId == Guid.Empty) throw new ArgumentException("A non-empty profile ID is required.", nameof(profileId));
+        return Path.Combine(Profiles, profileId.ToString("D"));
+    }
+    public string WorkspaceDatabase(Guid profileId) => Path.Combine(ProfileDirectory(profileId), "workspace.db");
+    public string ProfileAttachments(Guid profileId) => Path.Combine(ProfileDirectory(profileId), "attachments");
 
     public void EnsureDirectories()
     {
