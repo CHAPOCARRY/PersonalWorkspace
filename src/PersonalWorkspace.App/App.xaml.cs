@@ -15,6 +15,7 @@ public partial class App : Application
     private ServiceProvider? services;
     private Serilog.Core.Logger? logger;
     private Window? window;
+    private FileStream? instanceLease;
 
     public App()
     {
@@ -39,9 +40,14 @@ public partial class App : Application
                     fileSizeLimitBytes: 5_000_000, rollOnFileSizeLimit: true, shared: true)
                 .CreateLogger();
             logger.Information("Application startup");
+            // Prevent a second process from retaining a context while the first deletes its workspace.
+            try { instanceLease = new FileStream(paths.InstanceLock, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException exception) when ((exception.HResult & 0xFFFF) is 32 or 33)
+            { throw new ProfileOperationException("Personal Workspace is already open. Close the other window before starting another copy.", exception); }
             services = CompositionRoot.Build(paths, logger);
             // Resolution happens only at the application composition boundary.
             await services.GetRequiredService<IDatabaseInitializer>().InitializeAsync();
+            await services.GetRequiredService<ProfilesViewModel>().InitializeAsync();
             await services.GetRequiredService<ShellViewModel>().InitializeAsync();
             await services.GetRequiredService<WindowStateController>().InitializeAsync();
             window = services.GetRequiredService<MainWindow>();
@@ -57,7 +63,7 @@ public partial class App : Application
                 Title = "Personal Workspace — Unable to start",
                 Content = new TextBlock
                 {
-                    Text = "Personal Workspace could not start. Check access to the local application folder and review the logs in %LOCALAPPDATA%\\PersonalWorkspace\\Logs, then try again.",
+                    Text = exception is ProfileOperationException ? exception.Message : "Personal Workspace could not start. Check access to the local application folder and review the logs in %LOCALAPPDATA%\\PersonalWorkspace\\Logs, then try again.",
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(24)
                 }
@@ -72,6 +78,7 @@ public partial class App : Application
     {
         logger?.Information("Application shutdown");
         services?.Dispose();
+        instanceLease?.Dispose();
         logger?.Dispose();
     }
 }

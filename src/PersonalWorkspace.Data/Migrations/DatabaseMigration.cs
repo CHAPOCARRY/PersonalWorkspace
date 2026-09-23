@@ -12,6 +12,16 @@ public static class MigrationCatalog
                 ValueJson TEXT NOT NULL,
                 UpdatedAtUtc TEXT NOT NULL
             );
+            """),
+        new(2, "Create local profiles", """
+            CREATE TABLE Profiles (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Name TEXT NOT NULL COLLATE PROFILE_NAME UNIQUE CHECK(length(trim(Name)) > 0),
+                FolderName TEXT NOT NULL UNIQUE CHECK(FolderName = Id),
+                CreatedAtUtc TEXT NOT NULL,
+                LastOpenedAtUtc TEXT NULL,
+                SortOrder INTEGER NOT NULL
+            );
             """)
     ];
 }

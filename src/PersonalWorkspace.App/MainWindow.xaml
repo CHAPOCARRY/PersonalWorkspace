@@ -5,7 +5,7 @@
     Title="Personal Workspace">
     <Grid x:Name="Root" RequestedTheme="Light" Background="{ThemeResource Background}">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <Border Height="{StaticResource TopBarHeight}" Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="0,0,0,1" Padding="{StaticResource TopBarPadding}">
+        <Border Visibility="{Binding Profiles.HasCurrent, Converter={StaticResource BoolVisibility}}" Height="{StaticResource TopBarHeight}" Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="0,0,0,1" Padding="{StaticResource TopBarPadding}">
             <Grid ColumnSpacing="{StaticResource Space12}">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <Button Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ToggleSidebarCommand}" AutomationProperties.Name="Toggle sidebar" ToolTipService.ToolTip="Expand or collapse sidebar"><FontIcon Glyph="&#xE700;" FontSize="{StaticResource CardTitle}" /></Button>
@@ -15,7 +15,7 @@
                 <Button Grid.Column="4" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding OpenSettingsCommand}" AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings"><FontIcon Glyph="&#xE713;" FontSize="{StaticResource CardTitle}" /></Button>
             </Grid>
         </Border>
-        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Left" IsPaneOpen="{Binding IsSidebarExpanded, Mode=OneWay}"
+        <NavigationView x:Name="Navigation" Grid.Row="1" Visibility="{Binding Profiles.HasCurrent, Converter={StaticResource BoolVisibility}}" PaneDisplayMode="Left" IsPaneOpen="{Binding IsSidebarExpanded, Mode=OneWay}"
             OpenPaneLength="{StaticResource SidebarWidth}" CompactPaneLength="{StaticResource SidebarCollapsedWidth}"
             IsPaneToggleButtonVisible="False" IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
             IsTitleBarAutoPaddingEnabled="False" AlwaysShowHeader="False" ItemInvoked="OnItemInvoked">
@@ -36,9 +36,24 @@
                 <NavigationViewItem Content="Trash" Tag="Trash" Icon="Delete" />
                 <NavigationViewItem Content="Settings" Tag="Settings" Icon="Setting" />
             </NavigationView.FooterMenuItems>
-            <ScrollViewer Background="{ThemeResource Background}" Padding="{StaticResource ContentPadding}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
-                <views:PlaceholderView />
-            </ScrollViewer>
+            <NavigationView.PaneFooter>
+                <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="{StaticResource SidebarFooterMargin}" IsEnabled="{Binding Profiles.IsIdle}" ToolTipService.ToolTip="{Binding Profiles.CurrentName}" AutomationProperties.Name="{Binding Profiles.CurrentName}" AutomationProperties.AutomationId="ProfileSelector">
+                    <Button.Flyout><MenuFlyout Opening="OnProfileMenuOpening" /></Button.Flyout>
+                    <Grid ColumnSpacing="{StaticResource Space8}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <SymbolIcon Symbol="Contact" />
+                        <TextBlock Grid.Column="1" Text="{Binding Profiles.CurrentName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Visibility="{Binding IsSidebarExpanded, Converter={StaticResource BoolVisibility}}" />
+                        <FontIcon Grid.Column="2" Glyph="&#xE70D;" FontSize="{StaticResource Small}" Visibility="{Binding IsSidebarExpanded, Converter={StaticResource BoolVisibility}}" />
+                    </Grid>
+                </Button>
+            </NavigationView.PaneFooter>
+            <Grid Background="{ThemeResource Background}">
+                <ScrollViewer Visibility="{Binding Profiles.ShowPlaceholder, Converter={StaticResource BoolVisibility}}" Padding="{StaticResource ContentPadding}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <views:PlaceholderView />
+                </ScrollViewer>
+                <views:ProfileManagementView DataContext="{Binding Profiles}" Visibility="{Binding IsManaging, Converter={StaticResource BoolVisibility}}" />
+            </Grid>
         </NavigationView>
+        <views:ProfileManagementView Grid.Row="1" DataContext="{Binding Profiles}" Visibility="{Binding HasCurrent, Converter={StaticResource BoolVisibility}, ConverterParameter=Invert}" />
     </Grid>
 </Window>

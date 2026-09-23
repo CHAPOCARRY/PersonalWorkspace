@@ -1,6 +1,6 @@
 # PersonalWorkspace
 
-A local-first Windows desktop application. This repository currently implements **Phase 0: Foundation** only. All feature destinations are placeholders.
+A local-first Windows desktop application. This repository implements **Phase 0: Foundation** and **Phase 1: Local Profiles**. Tasks, Calendar, and other business-feature destinations remain placeholders.
 
 ## Development
 
@@ -20,6 +20,8 @@ dotnet publish src/PersonalWorkspace.App -c Release -r win-x64 --self-contained 
 
 Copy the entire publish directory; the executable is not a standalone single file. No installer or MSIX packaging is provided yet.
 
-Data lives under `%LOCALAPPDATA%\PersonalWorkspace`: `app.db`, `Logs`, `Backups`, and `Profiles`. The last two folders are empty reserves; backup/profile functionality is not implemented. Logs are local JSON lines, rotated daily/by size with at most 14 retained files.
+Data lives under `%LOCALAPPDATA%\PersonalWorkspace`: global `app.db`, `Logs`, `Backups`, and `Profiles`. Each profile has `Profiles/{guid}/workspace.db` and an empty `attachments/` directory. Backups and attachment functionality are not implemented. Logs are local JSON lines, rotated daily/by size with at most 14 retained files.
+
+On first launch, enter a name to create your first local profile. The application reopens the last profile automatically on subsequent launches. Use the button at the bottom of the sidebar to switch, create, or manage profiles. Profile deletion requires confirmation and permanently removes its local files. Profiles have no authentication or online identity. Only one application process may use the data directory at a time.
 
 See [architecture and manual verification](docs/ARCHITECTURE.md).

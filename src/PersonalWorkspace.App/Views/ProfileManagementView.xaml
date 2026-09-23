@@ -1,0 +1,48 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.ProfileManagementView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" IsEnabled="{Binding IsIdle}">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+        <StackPanel Spacing="{StaticResource Space24}" Padding="{StaticResource ContentPadding}">
+            <StackPanel Spacing="{StaticResource Space8}">
+                <TextBlock Text="PERSONAL WORKSPACE" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" CharacterSpacing="120" />
+                <TextBlock Text="{Binding PageHeading}" Style="{StaticResource PageTitleStyle}" />
+                <TextBlock Text="Profiles are separate workspaces on this device. Only a name is needed." Style="{StaticResource BodyStyle}" />
+            </StackPanel>
+            <TextBlock Text="{Binding Error}" Style="{StaticResource BodyStyle}" Foreground="{ThemeResource Danger}" AutomationProperties.LiveSetting="Polite" />
+            <StackPanel Spacing="{StaticResource Space24}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}" Visibility="{Binding HasProfiles, Converter={StaticResource BoolVisibility}}">
+                    <Button Content="New Profile" Command="{Binding NewProfileCommand}" />
+                    <Button Content="Back to workspace" Command="{Binding CloseManagementCommand}" Visibility="{Binding HasCurrent, Converter={StaticResource BoolVisibility}}" />
+                </StackPanel>
+                <Border Visibility="{Binding EditorOpen, Converter={StaticResource BoolVisibility}}" Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="1" CornerRadius="{StaticResource CardRadius}" Padding="{StaticResource CardPadding}">
+                    <StackPanel Spacing="{StaticResource Space16}" MaxWidth="{StaticResource ProfileFormWidth}" HorizontalAlignment="Left">
+                        <TextBlock Text="{Binding EditorHeading}" FontSize="{StaticResource SectionTitle}" Foreground="{ThemeResource TextPrimary}" />
+                        <TextBox Header="Profile name" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="{StaticResource ProfileNameWidth}" AutomationProperties.AutomationId="ProfileNameInput" />
+                        <Button Content="{Binding SaveLabel}" Command="{Binding SaveCommand}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.AutomationId="SaveProfile" />
+                    </StackPanel>
+                </Border>
+                <ItemsControl ItemsSource="{Binding ProfileRows}" Visibility="{Binding HasProfiles, Converter={StaticResource BoolVisibility}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="0,0,0,1" Padding="{StaticResource CardPadding}">
+                                <StackPanel Spacing="{StaticResource Space12}">
+                                    <TextBlock Text="{Binding Name}" FontSize="{StaticResource CardTitle}" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{ThemeResource TextPrimary}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                                        <TextBlock Text="Last opened:" Style="{StaticResource BodyStyle}" />
+                                        <TextBlock Text="{Binding LastOpenedLocalText}" Style="{StaticResource BodyStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                                        <Button Content="{Binding OpenLabel}" IsEnabled="{Binding CanOpen}" Click="OnOpen" Tag="{Binding Profile}" />
+                                        <Button Content="Rename" Click="OnRename" Tag="{Binding Profile}" />
+                                        <Button Content="Delete" Click="OnDelete" Tag="{Binding Profile}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+            <ProgressRing IsActive="{Binding IsBusy}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" HorizontalAlignment="Left" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

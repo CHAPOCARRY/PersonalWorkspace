@@ -7,6 +7,10 @@ public interface IApplicationPaths
     string Logs { get; }
     string Backups { get; }
     string Profiles { get; }
+    string InstanceLock { get; }
+    string ProfileDirectory(Guid profileId);
+    string WorkspaceDatabase(Guid profileId);
+    string ProfileAttachments(Guid profileId);
     void EnsureDirectories();
 }
 
@@ -37,6 +41,7 @@ public sealed record WindowPreferences(int Width = 1200, int Height = 800, bool 
 
 public static class SettingKeys
 {
+    public const string LastOpenedProfileId = "LastOpenedProfileId";
     public const string SidebarCollapsed = "shell.sidebarCollapsed";
     public const string Window = "shell.window";
 }
