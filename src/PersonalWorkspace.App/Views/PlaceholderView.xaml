@@ -1,0 +1,19 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.PlaceholderView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="{StaticResource Space24}">
+        <StackPanel Spacing="{StaticResource Space8}">
+            <TextBlock Text="PERSONAL WORKSPACE" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" CharacterSpacing="120" />
+            <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+        </StackPanel>
+        <Border Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}"
+                BorderThickness="1" CornerRadius="{StaticResource CardRadius}" Padding="{StaticResource CardPadding}">
+            <StackPanel Spacing="{StaticResource Space12}">
+                <TextBlock Text="A place for what comes next" FontSize="{StaticResource CardTitle}" FontWeight="SemiBold" Foreground="{ThemeResource TextPrimary}" />
+                <TextBlock Text="{Binding Description}" Style="{StaticResource BodyStyle}" />
+                <TextBlock Text="Foundation preview · Stored locally on this device" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+        <TextBlock Text="{Binding ErrorMessage}" Style="{StaticResource BodyStyle}" Foreground="{ThemeResource Danger}" AutomationProperties.LiveSetting="Polite" />
+    </StackPanel>
+</UserControl>
