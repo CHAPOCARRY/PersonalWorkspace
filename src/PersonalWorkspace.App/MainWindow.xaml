@@ -1,0 +1,44 @@
+<Window x:Class="PersonalWorkspace.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:PersonalWorkspace.App.Views"
+    Title="Personal Workspace">
+    <Grid x:Name="Root" RequestedTheme="Light" Background="{ThemeResource Background}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Border Height="{StaticResource TopBarHeight}" Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="0,0,0,1" Padding="{StaticResource TopBarPadding}">
+            <Grid ColumnSpacing="{StaticResource Space12}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Button Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ToggleSidebarCommand}" AutomationProperties.Name="Toggle sidebar" ToolTipService.ToolTip="Expand or collapse sidebar"><FontIcon Glyph="&#xE700;" FontSize="{StaticResource CardTitle}" /></Button>
+                <TextBlock Grid.Column="1" Text="Personal Workspace" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{ThemeResource TextPrimary}" />
+                <Button Grid.Column="2" Content="Search" IsEnabled="False" AutomationProperties.Name="Search — available in a future phase" />
+                <Button Grid.Column="3" Content="Add" IsEnabled="False" AutomationProperties.Name="Add — available in a future phase" />
+                <Button Grid.Column="4" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding OpenSettingsCommand}" AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings"><FontIcon Glyph="&#xE713;" FontSize="{StaticResource CardTitle}" /></Button>
+            </Grid>
+        </Border>
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Left" IsPaneOpen="{Binding IsSidebarExpanded, Mode=OneWay}"
+            OpenPaneLength="{StaticResource SidebarWidth}" CompactPaneLength="{StaticResource SidebarCollapsedWidth}"
+            IsPaneToggleButtonVisible="False" IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
+            IsTitleBarAutoPaddingEnabled="False" AlwaysShowHeader="False" ItemInvoked="OnItemInvoked">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Today" Tag="Today" Icon="Home" />
+                <NavigationViewItem Content="Tasks" Tag="Tasks" Icon="Accept" />
+                <NavigationViewItem Content="Calendar" Tag="Calendar" Icon="Calendar" />
+                <NavigationViewItem Content="Trackers" Tag="Trackers" Icon="OutlineStar" />
+                <NavigationViewItem Content="Journal" Tag="Journal" Icon="Edit" />
+                <NavigationViewItem Content="Pages" Tag="Pages" Icon="Document" />
+                <NavigationViewItem Content="Lists" Tag="Lists" Icon="List" />
+                <NavigationViewItemSeparator />
+                <NavigationViewItemHeader Content="SPACES" />
+                <NavigationViewItem Content="Available in a future phase" IsEnabled="False" SelectsOnInvoked="False" />
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Archived" Tag="Archived" Icon="Folder" />
+                <NavigationViewItem Content="Trash" Tag="Trash" Icon="Delete" />
+                <NavigationViewItem Content="Settings" Tag="Settings" Icon="Setting" />
+            </NavigationView.FooterMenuItems>
+            <ScrollViewer Background="{ThemeResource Background}" Padding="{StaticResource ContentPadding}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                <views:PlaceholderView />
+            </ScrollViewer>
+        </NavigationView>
+    </Grid>
+</Window>
