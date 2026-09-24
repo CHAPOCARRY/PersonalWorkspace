@@ -18,6 +18,10 @@ public sealed partial class MainWindow : Window
         Navigation.SelectedItem = Navigation.MenuItems[0];
         viewModel.PropertyChanged += OnViewModelChanged;
         windowState.Attach(this, viewModel);
+        var todayTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        todayTimer.Tick += async (_, _) => await viewModel.Tasks.RefreshTodayIfNeededAsync();
+        todayTimer.Start();
+        Closed += (_, _) => todayTimer.Stop();
         Closed += (_, _) => viewModel.PropertyChanged -= OnViewModelChanged;
     }
 

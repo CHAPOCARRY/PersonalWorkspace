@@ -19,6 +19,11 @@ internal static class CompositionRoot
         services.AddSingleton<IEnumerable<DatabaseMigration>>(MigrationCatalog.All);
         services.AddSingleton<IDatabaseInitializer, DatabaseInitializer>();
         services.AddSingleton<ISettingsService, SqliteSettingsService>();
+        services.AddSingleton<IWorkspaceOperationGate, WorkspaceOperationGate>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ITaskRepository, SqliteTaskRepository>();
+        services.AddSingleton<ITaskService, TaskService>();
+        services.AddSingleton<TaskWorkspaceViewModel>();
         services.AddSingleton<IProfileRepository, SqliteProfileRepository>();
         services.AddSingleton<IWorkspaceInitializer, WorkspaceInitializer>();
         services.AddSingleton<IProfileFiles, ProfileFiles>();

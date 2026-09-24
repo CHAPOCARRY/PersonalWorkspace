@@ -11,7 +11,7 @@
                 <Button Style="{StaticResource ToolbarButtonStyle}" Command="{Binding ToggleSidebarCommand}" AutomationProperties.Name="Toggle sidebar" ToolTipService.ToolTip="Expand or collapse sidebar"><FontIcon Glyph="&#xE700;" FontSize="{StaticResource CardTitle}" /></Button>
                 <TextBlock Grid.Column="1" Text="Personal Workspace" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{ThemeResource TextPrimary}" />
                 <Button Grid.Column="2" Content="Search" IsEnabled="False" AutomationProperties.Name="Search — available in a future phase" />
-                <Button Grid.Column="3" Content="Add" IsEnabled="False" AutomationProperties.Name="Add — available in a future phase" />
+                <Button Grid.Column="3" Content="Add" Command="{Binding AddTaskCommand}" IsEnabled="{Binding Tasks.IsIdle}" AutomationProperties.Name="Add task" />
                 <Button Grid.Column="4" Style="{StaticResource ToolbarButtonStyle}" Command="{Binding OpenSettingsCommand}" AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings"><FontIcon Glyph="&#xE713;" FontSize="{StaticResource CardTitle}" /></Button>
             </Grid>
         </Border>
@@ -48,9 +48,12 @@
                 </Button>
             </NavigationView.PaneFooter>
             <Grid Background="{ThemeResource Background}">
-                <ScrollViewer Visibility="{Binding Profiles.ShowPlaceholder, Converter={StaticResource BoolVisibility}}" Padding="{StaticResource ContentPadding}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                <ScrollViewer Visibility="{Binding ShowPlaceholder, Converter={StaticResource BoolVisibility}}" Padding="{StaticResource ContentPadding}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
                     <views:PlaceholderView />
                 </ScrollViewer>
+                <Grid Visibility="{Binding ShowTasks, Converter={StaticResource BoolVisibility}}">
+                    <views:TaskWorkspaceView DataContext="{Binding Tasks}" />
+                </Grid>
                 <views:ProfileManagementView DataContext="{Binding Profiles}" Visibility="{Binding IsManaging, Converter={StaticResource BoolVisibility}}" />
             </Grid>
         </NavigationView>

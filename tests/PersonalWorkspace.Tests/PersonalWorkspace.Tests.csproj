@@ -4,7 +4,13 @@
     <ProjectReference Include="../../src/PersonalWorkspace.Data/PersonalWorkspace.Data.csproj" />
     <ProjectReference Include="../../src/PersonalWorkspace.Services/PersonalWorkspace.Services.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1"><PrivateAssets>all</PrivateAssets></PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Exercise UI-independent presentation state without loading WinUI in the test host. -->
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskWorkspaceViewModel.cs" Link="Presentation/TaskWorkspaceViewModel.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskRowViewModel.cs" Link="Presentation/TaskRowViewModel.cs" />
   </ItemGroup>
 </Project>

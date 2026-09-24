@@ -19,6 +19,7 @@ public sealed class ProfileTests : IAsyncLifetime
     private readonly TestFiles files;
     private readonly TestWorkspaces workspaces;
     private readonly ProfileService service;
+    private readonly WorkspaceOperationGate workspaceGate = new();
 
     public ProfileTests()
     {
@@ -32,7 +33,7 @@ public sealed class ProfileTests : IAsyncLifetime
         service = NewService(current);
     }
 
-    private ProfileService NewService(CurrentProfile state) => new(repository, settings, files, workspaces, state, NullLogger<ProfileService>.Instance);
+    private ProfileService NewService(CurrentProfile state) => new(repository, settings, files, workspaces, state, NullLogger<ProfileService>.Instance, workspaceGate);
     public Task InitializeAsync() => new DatabaseInitializer(paths, connections, MigrationCatalog.All, NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
 
     [Fact]
@@ -87,6 +88,10 @@ public sealed class ProfileTests : IAsyncLifetime
         using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         Assert.Equal("SchemaMigrations", reader.GetString(0));
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("WorkspaceItems", reader.GetString(0));
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("Tasks", reader.GetString(0));
         Assert.False(await reader.ReadAsync());
     }
 
@@ -352,6 +357,7 @@ public sealed class ProfileTests : IAsyncLifetime
     public Task DisposeAsync()
     {
         service.Dispose();
+        workspaceGate.Dispose();
         var expectedParent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "PersonalWorkspace.Tests")) + Path.DirectorySeparatorChar;
         if (!Path.GetFullPath(root).StartsWith(expectedParent, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe test cleanup path.");
         if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
