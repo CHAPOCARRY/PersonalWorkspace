@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. The **Phase 1: Local Profiles** section extends it and supersedes the historical statements about profile storage and multiple application instances.
+The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles** and **Phase 2: Task Core** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
 
 ## Scope
 
@@ -183,3 +183,60 @@ Manual acceptance flow:
 6. Delete the final test profile and verify the first-profile form returns. Recheck Phase 0 sidebar/window persistence and high-DPI layouts.
 
 The implementation was also exercised through Windows UI Automation for first-run creation, second-profile creation, last-profile restoration after restart, switching, rename, cancellation of deletion, current-profile deletion with fallback, and final-profile deletion. The temporary UI test profiles were removed through the application's confirmation dialogs.
+
+## Phase 2: Task Core
+
+### Domain and workspace schema
+
+`WorkspaceItem` is the shared GUID identity and metadata record: item type, title, UTC creation/update timestamps, and nullable UTC archive/delete timestamps. `TaskItem` composes that identity with description, status, priority, and optional `DateOnly` scheduled date. The C# name avoids ambiguity with `System.Threading.Tasks.Task`. Only the Task item type is defined; future item types can extend the enum without adding unrelated fields now.
+
+The first **workspace migration, version 1: Create task core**, adds `WorkspaceItems` and `Tasks`. It does not alter global migrations or the shared ledger runner. Phase 1 workspaces upgrade through their existing empty ledger when opened. New profiles receive the same migration. Global `app.db` remains settings and profile metadata only.
+
+`Tasks.ItemId` is both primary key and a foreign key to `WorkspaceItems.Id`, with `ON DELETE CASCADE`. There can be only one task row for an item. All application creation/update/deletion paths maintain both rows transactionally. CHECK constraints reject invalid status/priority values and blank SQL titles. Scheduled dates use invariant `yyyy-MM-dd` text; domain validation uses `DateOnly`, so scheduling never stores an artificial midnight UTC timestamp.
+
+The composite index `(ItemType, DeletedAtUtc, ArchivedAtUtc)` supports active/archived/trash queries. A partial ScheduledDate index covers dated tasks and Today. There is no separate status/priority index because Phase 2 has no query filtering on those fields; adding unused indexes would add write overhead without a current benefit.
+
+### Rules and transaction boundaries
+
+`TaskService` owns title trimming/validation, enum validation, status/scheduling actions, timestamp updates, duplication, and lifecycle rules. Duplicate titles are allowed. New tasks default to ToDo, priority None, and no scheduled date. ToDo, Doing, and Blocked are incomplete; Done alone means completed. There is no separate completion flag. Moving away from Done reopens the task.
+
+`SqliteTaskRepository` uses parameterized SQL and short-lived, unpooled connections with foreign keys enabled. A write transaction surrounds both inserts, both updates, or a permanent-delete cascade. Updates read the existing record inside the immediate transaction before applying the service mutation. A failure rolls back the entire operation; task insert failures cannot strand an item row. Permanent deletion is allowed only from Trash and requires the UI's explicit confirmation naming the task.
+
+Reads never modify timestamps. Meaningful changes advance UpdatedAtUtc; no-op saves/status changes retain it. The timestamp advances by at least one tick if the local clock has not advanced, while remaining UTC. Creation initializes both timestamps. Duplication creates a new identity and fresh timestamps, copies title/description/priority/scheduled date, resets status to ToDo, and clears archive/delete state.
+
+Archive and Trash are independent of status. Active/Today exclude both archived and deleted items. Archived includes archived items only when not deleted. Trash includes deleted items regardless of prior archive state. Restoring from archive clears ArchivedAtUtc. Restoring from Trash clears both lifecycle timestamps so the task returns to the active Library, retaining status and scheduled date. Editing a deleted task requires restoration first. There is no retention timer or task audit history.
+
+### Workspace resolution and profile isolation
+
+Task service calls resolve the current injected profile and workspace path only after entering the shared `IWorkspaceOperationGate`. The profile service also enters this gate around lifecycle operations, ensuring switching, initialization, and profile deletion wait for in-flight task operations to release their SQLite connections. This is the only necessary extension to Phase 1 lifecycle coordination; its storage/deletion strategy is unchanged.
+
+Existing-task UI actions carry a `TaskReference` containing the originating profile ID and task ID; creation captures the editor's profile ID. The service verifies the expected ID against the current context before any workspace access. Thus a queued or stale action fails safely rather than writing into the newly selected profile. No current profile means no workspace access. The repository receives an operation-scoped context rather than resolving mutable global state halfway through a transaction.
+
+`TaskWorkspaceViewModel` listens to current-profile changes, clears rows/draft/detail/filter immediately, and reloads the current high-level area. A task-detail/quick-create route returns to Tasks when switching profiles. A revision counter discards delayed results from old contexts or old navigation requests. There is no cross-profile task cache. Profile renames leave the same workspace context intact.
+
+### Navigation and presentation
+
+Tasks, Today, Archived, and Trash share the task view and records. `Task/{guid}` uses the existing route's optional entity ID for dedicated detail; `Tasks/new` opens the small quick-create form. The Library has a culture-aware, case-insensitive in-memory title filter only; this does not affect other areas or implement global search.
+
+Today queries the current local calendar date via an injected `TimeProvider`, not UTC. Completed tasks remain visible on their scheduled date. The shell checks for local date rollover once a minute while Today is visible and reloads when the date changes. No events, widgets, carry-over, or recurrence logic is added.
+
+Quick create exposes title, priority, and optional date. Detail additionally edits status and plain multiline description and displays local, culture-formatted creation/modification metadata. Saves are explicit. Navigation/profile switching discards unsaved drafts. CalendarDatePicker uses a small UI-only nullable-date bridge: the native control otherwise displayed its minimum date for a null reflection binding. The bridge preserves an empty selection and maps only the chosen calendar date to the domain.
+
+Row actions use native flyouts; permanent delete uses a ContentDialog with Cancel as default. Existing design tokens provide layout, typography, and colors, with a few centralized task-layout tokens. Top bar, sidebar, and profile selector retain their structure; Add now opens task creation. Calendar, Trackers, Journal, Pages, Lists, Spaces, and global Search remain placeholders.
+
+Infrastructure failures are logged with profile IDs and shown as friendly messages. Titles/descriptions are not intentionally logged; normal edits do not emit information-level activity logs. Failed writes leave the editor available for correction/retry. The app delays orderly close while task/profile operations are busy.
+
+### Verification and limitations
+
+Tests cover legacy workspace upgrades and idempotency; global/workspace schema separation; atomic insert/update/cascade rollback; defaults/validation/duplicate titles; reads and meaningful/no-op timestamps; status transitions; scheduling/unscheduling across a DST date; Today when local date differs from UTC; archive/trash/restore; duplication; profile isolation/stale-write rejection; no-profile behavior; switching during an in-flight write; and clearing/ignoring stale presentation results. UI-independent task view-model sources are linked into the existing test project with the already-used MVVM Toolkit dependency. No new package identity/version was introduced.
+
+Manual acceptance:
+
+1. In Personal, create `Comprar leite` without a date: Library yes, Today no. Open detail, schedule today, save, and mark Done from Today. Verify Library shows the same Done task.
+2. Create `Jogar futebol` without a date and complete it. Duplicate it: the copy must have a new identity and ToDo status.
+3. Create `Preparar projeto`, priority High, scheduled tomorrow. Verify it is absent from Today; archive it, restore it from Archived, and verify its properties remain intact.
+4. Move a task to Trash, restore it, then test permanent deletion with both Cancel and confirmation. Inspect that only the confirmed task is removed.
+5. Switch to Testing and create a different task. Switch back: only Personal's tasks return. Restart and verify profile selection and tasks persist.
+6. Verify detail editing, clear-date behavior, keyboard focus, narrow windows, and Windows scaling. Calendar must remain a placeholder.
+
+Phase 2 intentionally has no advanced filtering, paging, sorting UI, unsaved-change prompt, rich text, attachment handling, subtasks, dependencies, recurrence, carry-over, events, calendar UI, boards, notifications, or later-phase entities. Library queries currently load the selected collection in memory; rows use a virtualized native ListView. Very large workspaces will need bounded queries in a future phase. SQLite disk calls remain synchronous internally despite asynchronous contracts; Phase 2 adds no background sync or scheduler.

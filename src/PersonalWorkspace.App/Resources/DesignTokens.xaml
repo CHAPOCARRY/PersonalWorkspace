@@ -17,6 +17,15 @@
     </ResourceDictionary.ThemeDictionaries>
     <infrastructure:BooleanVisibilityConverter x:Key="BoolVisibility" />
     <x:Double x:Key="ProfileFormWidth">480</x:Double>
+    <x:Double x:Key="TaskDetailWidth">920</x:Double>
+    <x:Double x:Key="TaskDescriptionHeight">160</x:Double>
+    <Thickness x:Key="TaskRowPadding">0,8</Thickness>
+    <Style x:Key="TaskTitleButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
     <x:Double x:Key="ProfileNameWidth">240</x:Double>
     <x:Double x:Key="Space4">4</x:Double>
     <x:Double x:Key="Space8">8</x:Double>

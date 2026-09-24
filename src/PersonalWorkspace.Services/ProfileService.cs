@@ -5,7 +5,8 @@ using PersonalWorkspace.Core;
 namespace PersonalWorkspace.Services;
 
 public sealed class ProfileService(IProfileRepository repository, ISettingsService settings, IProfileFiles files,
-    IWorkspaceInitializer workspaces, CurrentProfile current, ILogger<ProfileService> logger) : IProfileService, IDisposable
+    IWorkspaceInitializer workspaces, CurrentProfile current, ILogger<ProfileService> logger,
+    IWorkspaceOperationGate workspaceGate) : IProfileService, IDisposable
 {
     private readonly SemaphoreSlim gate = new(1, 1);
 
@@ -146,7 +147,11 @@ public sealed class ProfileService(IProfileRepository repository, ISettingsServi
     private async Task<T> RunAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
     {
         await gate.WaitAsync(cancellationToken);
-        try { return await operation(); }
+        try
+        {
+            using var lease = await workspaceGate.EnterAsync(cancellationToken);
+            return await operation();
+        }
         catch (ProfileValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (ProfileOperationException) { throw; }

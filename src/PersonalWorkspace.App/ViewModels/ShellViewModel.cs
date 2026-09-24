@@ -22,13 +22,19 @@ public sealed partial class ShellViewModel : ObservableObject
     public string? ErrorMessage { get => errorMessage; private set => SetProperty(ref errorMessage, value); }
 
     public ProfilesViewModel Profiles { get; }
+    public TaskWorkspaceViewModel Tasks { get; }
+    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea;
+    public bool ShowTasks => Profiles.ShowPlaceholder && Tasks.IsTaskArea;
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles)
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks)
     {
         this.settings = settings;
         this.navigation = navigation;
         this.logger = logger;
         Profiles = profiles;
+        Tasks = tasks;
+        Profiles.PropertyChanged += (_, _) => NotifyContent();
+        Tasks.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Tasks.IsTaskArea)) NotifyContent(); };
         navigation.Changed += (_, _) => UpdateDestination();
     }
 
@@ -36,6 +42,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         IsSidebarExpanded = !await settings.GetAsync(SettingKeys.SidebarCollapsed, false, cancellationToken);
         UpdateDestination();
+        await Tasks.ReloadAsync();
     }
 
     public void Navigate(string destination)
@@ -64,11 +71,24 @@ public sealed partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => Navigate("Settings");
 
+    [RelayCommand]
+    private void AddTask()
+    {
+        Profiles.CloseManagementCommand.Execute(null);
+        Tasks.NewTaskCommand.Execute(null);
+    }
+
+    private void NotifyContent()
+    {
+        OnPropertyChanged(nameof(ShowPlaceholder));
+        OnPropertyChanged(nameof(ShowTasks));
+    }
+
     public void ReportError(string message) => ErrorMessage = message;
 
     private void UpdateDestination()
     {
-        Title = navigation.Current.Destination;
+        Title = navigation.Current.Destination == "Task" ? "Tasks" : navigation.Current.Destination;
         Description = Title switch
         {
             "Today" => "Your daily overview will be implemented in a future phase.",

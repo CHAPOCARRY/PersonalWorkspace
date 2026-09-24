@@ -1,0 +1,76 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.TaskWorkspaceView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space16}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Grid ColumnSpacing="{StaticResource Space16}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding Heading}" Style="{StaticResource PageTitleStyle}" />
+            <Button Grid.Column="1" Content="Browse tasks" Command="{Binding BrowseCommand}" Visibility="{Binding IsToday, Converter={StaticResource BoolVisibility}}" />
+            <Button Grid.Column="2" Content="+ Task" Command="{Binding NewTaskCommand}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsList, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="NewTask" />
+        </Grid>
+        <TextBox Grid.Row="1" PlaceholderText="Filter task titles…" Text="{Binding Filter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding CanFilter, Converter={StaticResource BoolVisibility}}" AutomationProperties.Name="Filter task titles" />
+        <StackPanel Grid.Row="2" Spacing="{StaticResource Space8}">
+            <TextBlock Text="{Binding Error}" Style="{StaticResource BodyStyle}" Foreground="{ThemeResource Danger}" AutomationProperties.LiveSetting="Polite" />
+            <ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" />
+        </StackPanel>
+        <Grid Grid.Row="3" Visibility="{Binding IsList, Converter={StaticResource BoolVisibility}}">
+            <TextBlock Text="{Binding EmptyMessage}" Style="{StaticResource BodyStyle}" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" />
+            <ListView ItemsSource="{Binding Rows}" SelectionMode="None" IsEnabled="{Binding IsIdle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Tasks">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid ColumnSpacing="{StaticResource Space16}" Padding="{StaticResource TaskRowPadding}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Content="{Binding Title}" Click="OnOpen" Tag="{Binding}" Style="{StaticResource TaskTitleButtonStyle}" IsEnabled="{Binding CanEdit}" ToolTipService.ToolTip="{Binding Title}" />
+                            <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource BodyStyle}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="{Binding PriorityText}" Style="{StaticResource BodyStyle}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="3" Text="{Binding ScheduledText}" Style="{StaticResource BodyStyle}" VerticalAlignment="Center" />
+                            <Button Grid.Column="4" Content="Actions" AutomationProperties.Name="Task actions">
+                                <Button.Flyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="Open" Click="OnOpen" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="{Binding CompletionLabel}" Click="OnToggleDone" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Duplicate" Click="OnDuplicate" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Archive" Click="OnArchive" Tag="{Binding}" Visibility="{Binding CanArchive, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Restore" Click="OnRestore" Tag="{Binding}" Visibility="{Binding CanRestore, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Move to Trash" Click="OnTrash" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Permanently delete" Click="OnPermanentDelete" Tag="{Binding}" Visibility="{Binding IsDeleted, Converter={StaticResource BoolVisibility}}" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+        <ScrollViewer Grid.Row="3" Visibility="{Binding IsEditor, Converter={StaticResource BoolVisibility}}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+            <StackPanel Spacing="{StaticResource Space24}" MaxWidth="{StaticResource TaskDetailWidth}" HorizontalAlignment="Stretch">
+                <Button Content="Back" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
+                <TextBox Header="Title" Text="{Binding EditorTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskTitle" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space16}">
+                    <ComboBox Header="Status" ItemsSource="{Binding Statuses}" SelectedItem="{Binding EditorStatus, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskStatus" />
+                    <ComboBox Header="Priority" ItemsSource="{Binding Priorities}" SelectedItem="{Binding EditorPriority, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskPriority" />
+                    <CalendarDatePicker x:Name="ScheduledDatePicker" Header="Scheduled date (optional)" PlaceholderText="Unscheduled" DateChanged="OnScheduledDateChanged" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskScheduledDate" />
+                    <Button Content="Clear date" Command="{Binding UnscheduleCommand}" VerticalAlignment="Bottom" IsEnabled="{Binding IsIdle}" />
+                </StackPanel>
+                <TextBox Header="Description" Text="{Binding EditorDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="{StaticResource TaskDescriptionHeight}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskDescription" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                    <Button Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding CanSave}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.AutomationId="SaveTask" />
+                    <Button Content="Duplicate" Click="OnDuplicate" Tag="{Binding Detail}" IsEnabled="{Binding CanSave}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
+                    <Button Content="Archive" Click="OnArchive" Tag="{Binding Detail}" IsEnabled="{Binding CanSave}" Visibility="{Binding Detail.CanArchive, Converter={StaticResource BoolVisibility}}" />
+                    <Button Content="Restore" Click="OnRestore" Tag="{Binding Detail}" IsEnabled="{Binding CanSave}" Visibility="{Binding Detail.IsArchived, Converter={StaticResource BoolVisibility}}" />
+                    <Button Content="Move to Trash" Click="OnTrash" Tag="{Binding Detail}" IsEnabled="{Binding CanSave}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
+                </StackPanel>
+                <TextBlock Text="Select Save to keep your changes." Style="{StaticResource BodyStyle}" />
+                <StackPanel Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space8}">
+                    <TextBlock Text="Created" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" />
+                    <TextBlock Text="{Binding CreatedText}" Style="{StaticResource BodyStyle}" />
+                    <TextBlock Text="Last modified" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" />
+                    <TextBlock Text="{Binding ModifiedText}" Style="{StaticResource BodyStyle}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

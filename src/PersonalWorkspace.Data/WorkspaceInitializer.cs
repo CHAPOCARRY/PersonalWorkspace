@@ -18,8 +18,7 @@ public sealed class WorkspaceInitializer(IApplicationPaths paths, ILogger<Worksp
                 if ((long)(await check.ExecuteScalarAsync(cancellationToken))! != 1)
                     throw new InvalidDataException("Workspace migration ledger is missing.");
             }
-            // No workspace entities or migrations yet. The shared runner establishes the ledger.
-            await new MigrationRunner([], logger).ApplyAsync(connection, cancellationToken);
+            await new MigrationRunner(WorkspaceMigrationCatalog.All, logger).ApplyAsync(connection, cancellationToken);
             logger.LogInformation("Workspace database initialized for profile {ProfileId}", id);
         }
         catch (Exception exception)
