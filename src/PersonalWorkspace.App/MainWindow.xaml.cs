@@ -9,6 +9,7 @@ namespace PersonalWorkspace.App;
 public sealed partial class MainWindow : Window
 {
     private readonly ShellViewModel viewModel;
+    private bool synchronizingSelection;
 
     public MainWindow(ShellViewModel viewModel, WindowStateController windowState)
     {
@@ -21,7 +22,7 @@ public sealed partial class MainWindow : Window
         RefreshSpaces();
         windowState.Attach(this, viewModel);
         var todayTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-        todayTimer.Tick += async (_, _) => await viewModel.Tasks.RefreshTodayIfNeededAsync();
+        todayTimer.Tick += async (_, _) => { await viewModel.Tasks.RefreshTodayIfNeededAsync(); await viewModel.Calendar.RefreshClockAsync(); };
         todayTimer.Start();
         Closed += (_, _) => todayTimer.Stop();
         Closed += (_, _) => viewModel.PropertyChanged -= OnViewModelChanged;
@@ -30,6 +31,7 @@ public sealed partial class MainWindow : Window
 
     private void OnItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
+        if (synchronizingSelection) return;
         if (args.InvokedItemContainer?.Tag is OrganizationRow space) viewModel.OpenSpace(space);
         else if (args.InvokedItemContainer?.Tag is string destination)
         {
@@ -78,7 +80,15 @@ public sealed partial class MainWindow : Window
         if (args.PropertyName is nameof(ShellViewModel.Title) or nameof(ShellViewModel.ActiveSpaceId)) SynchronizeSelection();
     }
 
-    private void SynchronizeSelection() => Navigation.SelectedItem = Navigation.MenuItems.Concat(Navigation.FooterMenuItems)
-        .OfType<NavigationViewItem>().FirstOrDefault(item => viewModel.ActiveSpaceId is { } id
-            ? item.Tag is OrganizationRow space && space.Id == id : item.Tag as string == viewModel.Title);
+    private void SynchronizeSelection()
+    {
+        synchronizingSelection = true;
+        try
+        {
+            Navigation.SelectedItem = Navigation.MenuItems.Concat(Navigation.FooterMenuItems)
+                .OfType<NavigationViewItem>().FirstOrDefault(item => viewModel.ActiveSpaceId is { } id
+                    ? item.Tag is OrganizationRow space && space.Id == id : item.Tag as string == viewModel.Title);
+        }
+        finally { synchronizingSelection = false; }
+    }
 }

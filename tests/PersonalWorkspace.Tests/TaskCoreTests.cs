@@ -53,7 +53,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         await initializer.InitializeAsync(profileId, false);
         await initializer.InitializeAsync(profileId, false);
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE Version = 1;"));
-        Assert.Equal(7L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
+        Assert.Equal(8L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
         Assert.Equal(task, await tasks.FindAsync(Ref(task)));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();
         using var command = global.CreateCommand();
@@ -81,7 +81,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         check.CommandText = "SELECT COUNT(*) FROM Tasks;";
         Assert.Equal(0L, await check.ExecuteScalarAsync());
         check.CommandText = "SELECT COUNT(*) FROM SchemaMigrations;";
-        Assert.Equal(2L, await check.ExecuteScalarAsync());
+        Assert.Equal(3L, await check.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -398,6 +398,8 @@ public sealed class TaskCoreTests : IAsyncLifetime
             }
             return result;
         }
+        public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(Guid profileId, DateOnly from, DateOnly through, CancellationToken cancellationToken = default) => inner.GetScheduledAsync(profileId, from, through, cancellationToken);
+        public Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(Guid profileId, CancellationToken cancellationToken = default) => inner.GetUnscheduledAsync(profileId, cancellationToken);
         public Task<TaskItem?> FindAsync(TaskReference reference, CancellationToken cancellationToken = default) => inner.FindAsync(reference, cancellationToken);
         public Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default) => inner.CreateAsync(profileId, draft, cancellationToken);
         public Task<TaskItem> UpdateAsync(TaskReference reference, TaskDraft draft, CancellationToken cancellationToken = default) => inner.UpdateAsync(reference, draft, cancellationToken);
@@ -437,6 +439,8 @@ public sealed class TaskCoreTests : IAsyncLifetime
             await inner.CreateAsync(workspace, task, cancellationToken);
         }
         public Task<IReadOnlyList<TaskItem>> GetAsync(WorkspaceContext workspace, TaskCollection collection, DateOnly today, CancellationToken cancellationToken) => inner.GetAsync(workspace, collection, today, cancellationToken);
+        public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(WorkspaceContext workspace, DateOnly from, DateOnly through, CancellationToken cancellationToken) => inner.GetScheduledAsync(workspace, from, through, cancellationToken);
+        public Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(WorkspaceContext workspace, CancellationToken cancellationToken) => inner.GetUnscheduledAsync(workspace, cancellationToken);
         public Task<TaskItem?> FindAsync(WorkspaceContext workspace, Guid id, CancellationToken cancellationToken) => inner.FindAsync(workspace, id, cancellationToken);
         public Task<TaskItem> UpdateAsync(WorkspaceContext workspace, Guid id, Func<TaskItem, TaskItem> update, CancellationToken cancellationToken) => inner.UpdateAsync(workspace, id, update, cancellationToken);
         public Task PermanentlyDeleteAsync(WorkspaceContext workspace, Guid id, CancellationToken cancellationToken) => inner.PermanentlyDeleteAsync(workspace, id, cancellationToken);

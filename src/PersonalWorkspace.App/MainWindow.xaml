@@ -52,7 +52,14 @@
                     <views:PlaceholderView />
                 </ScrollViewer>
                 <Grid Visibility="{Binding ShowTasks, Converter={StaticResource BoolVisibility}}">
+                    <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <views:TaskWorkspaceView DataContext="{Binding Tasks}" />
+                    <Grid Grid.Row="1" MaxHeight="{StaticResource EventListHeight}" Visibility="{Binding Calendar.IsEventList, Converter={StaticResource BoolVisibility}}">
+                        <views:EventListView DataContext="{Binding Calendar}" />
+                    </Grid>
+                </Grid>
+                <Grid Visibility="{Binding ShowCalendar, Converter={StaticResource BoolVisibility}}">
+                    <views:CalendarView DataContext="{Binding Calendar}" />
                 </Grid>
                 <Grid Visibility="{Binding ShowOrganization, Converter={StaticResource BoolVisibility}}">
                     <views:OrganizationView DataContext="{Binding Organization}" />

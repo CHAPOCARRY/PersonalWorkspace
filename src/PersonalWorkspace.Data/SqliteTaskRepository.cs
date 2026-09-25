@@ -7,6 +7,29 @@ namespace PersonalWorkspace.Data;
 
 public sealed class SqliteTaskRepository : ITaskRepository
 {
+    public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(WorkspaceContext workspace, DateOnly from, DateOnly through, CancellationToken cancellationToken) =>
+        CalendarQueryAsync(workspace, from, through, cancellationToken);
+    public Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(WorkspaceContext workspace, CancellationToken cancellationToken) =>
+        CalendarQueryAsync(workspace, null, null, cancellationToken);
+
+    private static async Task<IReadOnlyList<TaskItem>> CalendarQueryAsync(WorkspaceContext workspace, DateOnly? from, DateOnly? through, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(workspace, cancellationToken);
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE w.ItemType = 1 AND w.ArchivedAtUtc IS NULL AND w.DeletedAtUtc IS NULL AND " +
+            (from is null ? "t.ScheduledDate IS NULL ORDER BY w.CreatedAtUtc DESC, w.Id LIMIT 100;"
+                : "t.ScheduledDate >= $from AND t.ScheduledDate <= $through ORDER BY t.ScheduledDate, w.CreatedAtUtc, w.Id;");
+        if (from is { } start)
+        {
+            command.Parameters.AddWithValue("$from", start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$through", through!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        }
+        using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<TaskItem>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(Read(reader));
+        return result;
+    }
+
     private const string SelectSql = """
         SELECT w.Id, w.ItemType, w.Title, w.CreatedAtUtc, w.UpdatedAtUtc, w.ArchivedAtUtc, w.DeletedAtUtc,
                t.Description, t.Status, t.Priority, t.ScheduledDate
