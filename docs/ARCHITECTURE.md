@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles**, **Phase 2: Task Core**, and **Phase 3: Tags and Spaces** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
+The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles**, **Phase 2: Task Core**, **Phase 3: Tags and Spaces**, and **Phase 4: Calendar and Events** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
 
 ## Scope
 
@@ -282,3 +282,49 @@ The native UI was exercised using temporary profiles: create Personal/Training S
 For manual acceptance, repeat that flow, then inspect keyboard navigation, a collapsed sidebar, and Windows display scaling. Also check Today, Archived, and Trash after assigning and changing task lifecycle state. No later-phase destinations should become functional.
 
 Phase 3 defers permanent Space deletion, inline entity creation during assignment, nested organization, manual ordering, and later WorkspaceItem types. Task duplication retains Phase 2 behavior and creates an unassigned copy. There is no global search, advanced color editor, audit/history, or unsaved-change prompt. Catalogs and relationships are loaded into an in-memory snapshot, consistent with the current unpaged Task Library; very large workspaces will need bounded database filtering and assignment pickers in a later phase. No Phase 4 functionality is included.
+
+## Phase 4: Calendar and Events
+
+### Event identity and schema
+
+Events are independent of Tasks and reuse `WorkspaceItem` identity with `ItemType.Event = 2`. They have no completion status or checkbox. `EventItem` adds AllDay, StartDate, nullable StartTime, EndDate, and nullable EndTime; WorkspaceItem retains title, UTC audit timestamps, and archive/trash metadata. Tasks continue to use their existing status and date-only ScheduledDate.
+
+Workspace migration **3: Create calendar events** adds `Events` with ItemId as both primary key and a cascading foreign key to WorkspaceItems. Separate StartDate and EndDate indexes support overlap queries. CHECK constraints enforce date order, all-day/time consistency, and a positive same-day timed interval. Domain validation uses DateOnly/TimeOnly to reject invalid calendar values. Workspace migrations 1 and 2, global migrations, and the ledger runner are unchanged. Events are stored only in the active profile's workspace.db, never app.db.
+
+### Local date/time semantics
+
+Event dates are invariant `yyyy-MM-dd` strings; timed values are invariant `HH:mm:ss.fffffff` strings without timezone offsets. They represent floating local Windows calendar dates and wall-clock times. They are not converted into midnight UTC or attached to a fixed timezone. Consequently, travel/timezone changes retain their written local times; DST gaps/overlaps are not mapped to an instant. This is deliberately a local planner, not a timezone-aware meeting scheduler. CreatedAtUtc, UpdatedAtUtc, ArchivedAtUtc, and DeletedAtUtc remain UTC.
+
+All-day Events include their final date and clear both time values on save. Timed Events require both times; the end must follow the start on the same date. Timed multi-day Events are supported naturally. Timed end instants are exclusive: an Event ending at midnight does not occupy the following day. `OccursOn` and range queries use the same boundary. `IsPast(localNow)` derives history from the timed end or, for all-day Events, the passing of the final local date. Clock passage never writes status or audit metadata.
+
+`EventService` owns validation, creation, editing, moving, and lifecycle rules. Duplicate titles are allowed. Meaningful changes advance UpdatedAtUtc monotonically; reads and no-op updates preserve it. Moving shifts both dates by the same number of calendar days, preserving local times and wall-clock duration. Calendar moves do not change identity or create copies. Invalid moves beyond supported DateOnly boundaries produce friendly errors.
+
+### Persistence, lifecycle, and isolation
+
+`SqliteEventRepository` uses parameterized statements and short-lived, unpooled connections. Event and WorkspaceItem inserts/updates share immediate transactions; failures roll back both. Archive hides an Event from normal Calendar/Today; Trash does the same. Restoring from Trash clears archive and deletion metadata, returning the Event to normal views. Permanent deletion requires Trash and a named native confirmation dialog; it cascades Event and generic organization links without deleting Tags, Spaces, or Tasks.
+
+Event services enter the existing workspace operation gate and check the originating profile before capturing its database path. Profile lifecycle/storage behavior is unchanged. Calendar/editor reads use revision counters; switching profiles clears entries, unscheduled rows, event lists, and drafts, and an Event editor returns to Calendar. Delayed old results cannot populate the new profile. Closing the window waits for Calendar/Event work too.
+
+Generic ItemTags/ItemSpaces already accept Event WorkspaceItem IDs and cascade correctly. This compatibility is covered by tests. Event assignment UI is deferred; no Event-specific organization tables or duplicated assignment infrastructure were added. Space views remain Task-focused in this phase.
+
+### Bounded Calendar queries and presentation
+
+Calendar is a view over existing Task and Event records. `ITaskService`/`ITaskRepository` now expose scheduled date-range and unscheduled queries. Scheduled queries filter active Tasks by the visible dates in SQLite using the existing ScheduledDate index. The unscheduled panel queries only the latest 100 active unscheduled Tasks, with that bound explained in the UI. It does not load historical scheduled Tasks or implement another Library.
+
+Event overlap queries filter `StartDate <= visibleEnd` and `EndDate >= visibleStart`, with the exclusive-midnight adjustment, and exclude archived/deleted rows in SQL. A Month loads its visible 42-day grid, a Week its seven days, and a Day one date. Week boundaries follow the current Windows culture's first day of week. No all-history Event query is used for Calendar/Today; Archived/Trash use their own lifecycle collections.
+
+`CalendarViewModel` supplies dates, grouped entries, navigation, editor state, and commands. CalendarView code-behind renders native controls, bridges nullable date/time pickers, and handles input gestures; it performs no SQL or domain mutations. Month cells show up to three compact entries plus a +N more action. Multi-day Events repeat on each occupied date. Clicking a date opens Day view; the selected date prefills new Tasks and Events. Previous/Next and Today use the selected view's period. Labels and pickers respect current culture; task marks and explicit Task labels distinguish Tasks from Event time/all-day labels without relying on color.
+
+Week uses seven agenda columns, with separate Tasks, All day, and time-ordered Events sections. Day uses those same sections for one date. Tasks never receive an invented time. The Month grid fits the normal window and scrolls at narrower sizes. Long entries wrap to two lines with tooltips; a day can always be opened to inspect all entries.
+
+Native drag handles initiate a WinUI drag after a small pointer movement. Day cells accept only the local Calendar view's captured typed entry, and the domain rechecks its profile. Scheduled and unscheduled Task drops call the existing ScheduleAsync; Event drops call MoveAsync. Dragging a middle day of a multi-day Event shifts the complete Event by the drop-date delta. Cancelled drags do not write. Rendering is deferred during a drag so the source is not replaced by the minute refresh. A Schedule for selected date action also supports unscheduled Tasks; existing Task/Event editors provide a keyboard-accessible date-editing path. There is no resizing, cross-app import, or automatic navigation while dragging.
+
+Today retains its existing Task view and adds a bounded Events section. Archived and Trash similarly keep Task behavior and add Event rows with appropriate actions. A minute timer refreshes visible Calendar/Today Event content and derived past labels; Event editor drafts are not refreshed away. Task changes from other views appear when returning to Calendar.
+
+### Verification and limitations
+
+Automated tests cover Phase 3 upgrades with original ledger entries and organization data retained, migration idempotency/global separation, timed/all-day/multi-day creation, validation, duplicate titles, update/no-op timestamps, local DST wall values, interval overlaps and exclusive-midnight ends, derived past state, transactional rollback, archive/trash/restore/delete cascades, bounded scheduled/unscheduled Task queries, rescheduling without duplication, local Today behavior, culture-aware ranges, selected-date creation, profile isolation, stale reads, and switching during an Event write. Calendar presentation sources are linked into the existing test project. No packages were added.
+
+Manual acceptance steps: create timed, all-day, and multi-day Events; inspect Month/Week/Day; navigate Previous/Next/Today and open a date; create a Task for that selected date; schedule an unscheduled Task; drag a Task and an Event to another date and verify their details; check today's Events; archive/trash/restore an Event and cancel/confirm permanent deletion; switch profiles and restart. Native UI smoke checks exercised Event creation and all three views, period navigation, unscheduled-task scheduling, real mouse drags of Tasks and Events, Library/Today consistency, lifecycle actions, profile switching, and restart persistence. The temporary profiles were removed through named confirmations and the original selection restored. Keyboard traversal, different display scaling settings, and touch input should also be checked interactively.
+
+Phase 4 intentionally has no recurrence rules, TaskOccurrence, carry-over, task times, reminders, notifications, resizing, or later item types. Event organization UI, timezone-aware instants, a proportional hourly timeline, and unscheduled-task paging are deferred. Week/Day are chronological agendas rather than hourly-positioned grids. Organization snapshots and existing Task Library behavior otherwise remain as documented in Phase 3. No Phase 5 functionality is included.

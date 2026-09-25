@@ -46,7 +46,8 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     }
 
     public bool IsTaskArea => navigation.Current.Destination is "Tasks" or "Today" or "Archived" or "Trash" or "Task" or "Space";
-    public bool IsEditor => navigation.Current.Destination == "Task" || navigation.Current is { Destination: "Tasks", EntityId: "new" };
+    public bool IsEditor => navigation.Current.Destination == "Task" || navigation.Current.Destination == "Tasks" &&
+        (navigation.Current.EntityId == "new" || navigation.Current.EntityId?.StartsWith("new:", StringComparison.Ordinal) == true);
     public bool IsDetail => navigation.Current.Destination == "Task";
     public bool IsList => !IsEditor;
     public bool IsIdle => !busy && !loading && current.Current is not null;
@@ -100,7 +101,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
             catalog = loadedCatalog;
             if (route.Destination == "Space" && !catalog.Spaces.Any(space => space.Id == RouteSpaceId && space.ArchivedAtUtc is null))
                 throw new OrganizationValidationException("This space is unavailable or archived. Manage spaces to restore it.");
-            if (route is { Destination: "Tasks", EntityId: "new" })
+            if (route.Destination == "Tasks" && IsEditor)
             {
                 editorProfile = profileId;
                 editorReference = null;
@@ -110,6 +111,13 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 EditorStatus = TaskStatus.ToDo;
                 EditorPriority = TaskPriority.None;
                 EditorScheduledDate = null;
+                if (route.EntityId?.StartsWith("new:", StringComparison.Ordinal) == true)
+                {
+                    if (!DateOnly.TryParseExact(route.EntityId[4..], "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var selected))
+                        throw new TaskValidationException("This calendar date is invalid.");
+                    EditorScheduledDate = new DateTimeOffset(selected.ToDateTime(TimeOnly.MinValue));
+                    returnRoute = new("Calendar");
+                }
             }
             else if (route.Destination == "Task")
             {

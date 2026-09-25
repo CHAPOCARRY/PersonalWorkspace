@@ -24,12 +24,14 @@ public sealed partial class ShellViewModel : ObservableObject
     public ProfilesViewModel Profiles { get; }
     public TaskWorkspaceViewModel Tasks { get; }
     public OrganizationViewModel Organization { get; }
+    public CalendarViewModel Calendar { get; }
+    public bool ShowCalendar => Profiles.ShowPlaceholder && Calendar.IsCalendarArea;
     public Guid? ActiveSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
     public bool ShowOrganization => Profiles.ShowPlaceholder && navigation.Current.Destination == "Organization";
-    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization;
+    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea;
     public bool ShowTasks => Profiles.ShowPlaceholder && Tasks.IsTaskArea;
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization)
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar)
     {
         this.settings = settings;
         this.navigation = navigation;
@@ -37,6 +39,7 @@ public sealed partial class ShellViewModel : ObservableObject
         Profiles = profiles;
         Tasks = tasks;
         Organization = organization;
+        Calendar = calendar;
         Profiles.PropertyChanged += (_, _) => NotifyContent();
         Tasks.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Tasks.IsTaskArea)) NotifyContent(); };
         navigation.Changed += (_, _) => UpdateDestination();
@@ -48,6 +51,7 @@ public sealed partial class ShellViewModel : ObservableObject
         UpdateDestination();
         await Tasks.ReloadAsync();
         await Organization.ReloadAsync();
+        await Calendar.ReloadAsync();
     }
 
     public void Navigate(string destination)
@@ -101,6 +105,7 @@ public sealed partial class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowPlaceholder));
         OnPropertyChanged(nameof(ShowTasks));
         OnPropertyChanged(nameof(ShowOrganization));
+        OnPropertyChanged(nameof(ShowCalendar));
     }
 
     public void ReportError(string message) => ErrorMessage = message;
@@ -109,7 +114,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         NotifyContent();
         OnPropertyChanged(nameof(ActiveSpaceId));
-        Title = navigation.Current.Destination == "Task" ? "Tasks" : navigation.Current.Destination;
+        Title = navigation.Current.Destination switch { "Task" => "Tasks", "Event" => "Calendar", var destination => destination };
         Description = Title switch
         {
             "Today" => "Your daily overview will be implemented in a future phase.",

@@ -7,6 +7,12 @@ namespace PersonalWorkspace.Services;
 public sealed class TaskService(ITaskRepository repository, ICurrentProfile current, IWorkspaceOperationGate gate,
     TimeProvider time, ILogger<TaskService> logger) : ITaskService
 {
+    public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(Guid profileId, DateOnly from, DateOnly through, CancellationToken cancellationToken = default) =>
+        RunAsync(profileId, workspace => from <= through ? repository.GetScheduledAsync(workspace, from, through, cancellationToken)
+            : throw new TaskValidationException("The end date cannot be before the start date."), cancellationToken);
+    public Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(Guid profileId, CancellationToken cancellationToken = default) =>
+        RunAsync(profileId, workspace => repository.GetUnscheduledAsync(workspace, cancellationToken), cancellationToken);
+
     public Task<IReadOnlyList<TaskItem>> GetAsync(Guid profileId, TaskCollection collection, CancellationToken cancellationToken = default) =>
         RunAsync(profileId, workspace => repository.GetAsync(workspace, collection, DateOnly.FromDateTime(time.GetLocalNow().DateTime), cancellationToken), cancellationToken);
 

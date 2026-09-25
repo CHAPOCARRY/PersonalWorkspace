@@ -23,6 +23,9 @@ internal static class CompositionRoot
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ITaskRepository, SqliteTaskRepository>();
         services.AddSingleton<ITaskService, TaskService>();
+        services.AddSingleton<IEventRepository, SqliteEventRepository>();
+        services.AddSingleton<IEventService, EventService>();
+        services.AddSingleton<CalendarViewModel>();
         services.AddSingleton<IOrganizationRepository, SqliteOrganizationRepository>();
         services.AddSingleton<IOrganizationService, OrganizationService>();
         services.AddSingleton<OrganizationViewModel>();

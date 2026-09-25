@@ -1,0 +1,71 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.CalendarView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space12}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <StackPanel Spacing="{StaticResource Space8}">
+            <TextBlock Text="{Binding Error}" Style="{StaticResource BodyStyle}" Foreground="{ThemeResource Danger}" AutomationProperties.LiveSetting="Polite" />
+            <ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" />
+        </StackPanel>
+        <ScrollViewer x:Name="CalendarScroll" AutomationProperties.AutomationId="CalendarScroll" Grid.Row="1" HorizontalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch" SizeChanged="OnCalendarSizeChanged" Visibility="{Binding IsCalendar, Converter={StaticResource BoolVisibility}}">
+            <StackPanel Spacing="{StaticResource Space16}">
+                <TextBlock Text="{Binding PeriodTitle}" Style="{StaticResource PageTitleStyle}" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                    <Button Content="Previous" Command="{Binding PreviousCommand}" IsEnabled="{Binding IsIdle}" />
+                    <Button Content="Today" Command="{Binding GoTodayCommand}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="CalendarToday" />
+                    <Button Content="Next" Command="{Binding NextCommand}" IsEnabled="{Binding IsIdle}" />
+                    <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="CalendarMode" AutomationProperties.Name="Calendar view" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                    <CalendarDatePicker x:Name="SelectedDayPicker" Header="Selected date" DateChanged="OnSelectedDayChanged" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="CalendarSelectedDate" />
+                    <Button Content="Open day" Command="{Binding DayViewCommand}" VerticalAlignment="Bottom" />
+                    <Button Content="+ Task" Command="{Binding NewTaskCommand}" IsEnabled="{Binding IsIdle}" VerticalAlignment="Bottom" />
+                    <Button Content="+ Event" Command="{Binding NewEventCommand}" IsEnabled="{Binding IsIdle}" VerticalAlignment="Bottom" AutomationProperties.AutomationId="NewEvent" />
+                </StackPanel>
+                <Grid x:Name="DaysGrid" ColumnSpacing="{StaticResource Space4}" RowSpacing="{StaticResource Space4}" />
+                <Expander Header="Unscheduled tasks" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsEnabled="{Binding IsIdle}">
+                    <StackPanel Spacing="{StaticResource Space8}">
+                        <TextBlock Text="Latest 100 active unscheduled tasks. Drag onto a day, or schedule for the selected date above." Style="{StaticResource BodyStyle}" />
+                        <ItemsControl ItemsSource="{Binding Unscheduled}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Button Content="{Binding Label}" Tag="{Binding}" Click="OnOpen" Style="{StaticResource TaskTitleButtonStyle}" />
+                                    <TextBlock Grid.Column="1" Text="⠿" Tag="{Binding}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" DragStarting="OnDragStarting" DropCompleted="OnDropCompleted" VerticalAlignment="Center" AutomationProperties.Name="{Binding DragLabel}" ToolTipService.ToolTip="Drag onto a day" />
+                                    <Button Grid.Column="2" Content="Schedule for selected date" Tag="{Binding}" Click="OnSchedule" />
+                                </Grid>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+        <ScrollViewer Grid.Row="1" Visibility="{Binding IsEditor, Converter={StaticResource BoolVisibility}}" HorizontalContentAlignment="Stretch">
+            <StackPanel Spacing="{StaticResource Space16}" MaxWidth="{StaticResource TaskDetailWidth}">
+                <TextBlock Text="{Binding EditorHeading}" Style="{StaticResource PageTitleStyle}" />
+                <Button Content="Back" Command="{Binding BackCommand}" />
+                <TextBox Header="Title" Text="{Binding EditorTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="EventTitle" />
+                <ToggleSwitch Header="All day" IsOn="{Binding AllDay, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="EventAllDay" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space16}">
+                    <CalendarDatePicker x:Name="StartDatePicker" Header="Start date" DateChanged="OnStartDateChanged" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="EventStartDate" />
+                    <TimePicker x:Name="StartTimePicker" Header="Start time" SelectedTimeChanged="OnStartTimeChanged" Visibility="{Binding IsTimed, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="EventStartTime" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space16}">
+                    <CalendarDatePicker x:Name="EndDatePicker" Header="End date" DateChanged="OnEndDateChanged" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="EventEndDate" />
+                    <TimePicker x:Name="EndTimePicker" Header="End time" SelectedTimeChanged="OnEndTimeChanged" Visibility="{Binding IsTimed, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="EventEndTime" />
+                </StackPanel>
+                <TextBlock Text="All-day events include the final date. Timed events end at the specified local time." Style="{StaticResource BodyStyle}" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                    <Button Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding CanSave}" Style="{StaticResource AccentButtonStyle}" AutomationProperties.AutomationId="SaveEvent" />
+                    <Button Content="Archive" Command="{Binding ArchiveCommand}" CommandParameter="{Binding DetailRow}" IsEnabled="{Binding IsIdle}" Visibility="{Binding DetailRow.CanArchive, Converter={StaticResource BoolVisibility}}" />
+                    <Button Content="Restore" Command="{Binding RestoreCommand}" CommandParameter="{Binding DetailRow}" IsEnabled="{Binding IsIdle}" Visibility="{Binding DetailRow.CanRestore, Converter={StaticResource BoolVisibility}}" />
+                    <Button Content="Move to Trash" Command="{Binding TrashCommand}" CommandParameter="{Binding DetailRow}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
+                </StackPanel>
+                <StackPanel Spacing="{StaticResource Space8}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="Created" Style="{StaticResource BodyStyle}" /><TextBlock Text="{Binding CreatedText}" />
+                    <TextBlock Text="Last modified" Style="{StaticResource BodyStyle}" /><TextBlock Text="{Binding ModifiedText}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

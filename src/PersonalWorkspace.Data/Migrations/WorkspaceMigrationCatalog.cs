@@ -56,6 +56,25 @@ public static class WorkspaceMigrationCatalog
             );
             CREATE INDEX IX_ItemTags_TagId ON ItemTags(TagId, ItemId);
             CREATE INDEX IX_ItemSpaces_SpaceId ON ItemSpaces(SpaceId, ItemId);
+            """),
+        new(3, "Create calendar events", """
+            CREATE TABLE Events (
+                ItemId TEXT NOT NULL PRIMARY KEY REFERENCES WorkspaceItems(Id) ON DELETE CASCADE,
+                AllDay INTEGER NOT NULL CHECK(AllDay IN (0, 1)),
+                StartDate TEXT NOT NULL CHECK(length(StartDate) = 10 AND StartDate GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+                StartTime TEXT NULL,
+                EndDate TEXT NOT NULL CHECK(length(EndDate) = 10 AND EndDate GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+                EndTime TEXT NULL,
+                CHECK(EndDate >= StartDate),
+                CHECK((AllDay = 1 AND StartTime IS NULL AND EndTime IS NULL) OR
+                    (AllDay = 0 AND StartTime IS NOT NULL AND EndTime IS NOT NULL AND
+                     length(StartTime) = 16 AND length(EndTime) = 16 AND
+                     StartTime >= '00:00:00.0000000' AND StartTime <= '23:59:59.9999999' AND
+                     EndTime >= '00:00:00.0000000' AND EndTime <= '23:59:59.9999999' AND
+                     (EndDate > StartDate OR EndTime > StartTime)))
+            );
+            CREATE INDEX IX_Events_StartDate ON Events(StartDate);
+            CREATE INDEX IX_Events_EndDate ON Events(EndDate);
             """)
     ];
 }

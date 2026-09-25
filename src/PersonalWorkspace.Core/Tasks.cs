@@ -1,6 +1,6 @@
 namespace PersonalWorkspace.Core;
 
-public enum WorkspaceItemType { Task = 1 }
+public enum WorkspaceItemType { Task = 1, Event = 2 }
 public enum TaskStatus { ToDo, Doing, Blocked, Done }
 public enum TaskPriority { None, Low, Normal, High, Critical }
 public enum TaskCollection { Active, Today, Archived, Trash }
@@ -23,6 +23,8 @@ public interface IWorkspaceOperationGate
 
 public interface ITaskRepository
 {
+    Task<IReadOnlyList<TaskItem>> GetScheduledAsync(WorkspaceContext workspace, DateOnly from, DateOnly through, CancellationToken cancellationToken);
+    Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(WorkspaceContext workspace, CancellationToken cancellationToken);
     Task<IReadOnlyList<TaskItem>> GetAsync(WorkspaceContext workspace, TaskCollection collection, DateOnly today, CancellationToken cancellationToken);
     Task<TaskItem?> FindAsync(WorkspaceContext workspace, Guid id, CancellationToken cancellationToken);
     Task CreateAsync(WorkspaceContext workspace, TaskItem task, CancellationToken cancellationToken);
@@ -32,6 +34,8 @@ public interface ITaskRepository
 
 public interface ITaskService
 {
+    Task<IReadOnlyList<TaskItem>> GetScheduledAsync(Guid profileId, DateOnly from, DateOnly through, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(Guid profileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TaskItem>> GetAsync(Guid profileId, TaskCollection collection, CancellationToken cancellationToken = default);
     Task<TaskItem?> FindAsync(TaskReference reference, CancellationToken cancellationToken = default);
     Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default);

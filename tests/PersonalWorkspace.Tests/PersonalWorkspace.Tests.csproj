@@ -14,5 +14,7 @@
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskRowViewModel.cs" Link="Presentation/TaskRowViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/OrganizationChoice.cs" Link="Presentation/OrganizationChoice.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/OrganizationViewModel.cs" Link="Presentation/OrganizationViewModel.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/CalendarModels.cs" Link="Presentation/CalendarModels.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/CalendarViewModel.cs" Link="Presentation/CalendarViewModel.cs" />
   </ItemGroup>
 </Project>

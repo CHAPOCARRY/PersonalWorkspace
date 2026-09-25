@@ -1,0 +1,24 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.EventListView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space8}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TextBlock Text="Events" FontSize="{StaticResource SectionTitle}" />
+        <TextBlock Grid.Row="1" Text="{Binding Error}" Foreground="{ThemeResource Danger}" Style="{StaticResource BodyStyle}" />
+        <Grid Grid.Row="2">
+            <TextBlock Text="No events here." Style="{StaticResource BodyStyle}" Visibility="{Binding HasNoEvents, Converter={StaticResource BoolVisibility}}" />
+            <ListView ItemsSource="{Binding EventRows}" SelectionMode="None" HorizontalContentAlignment="Stretch" IsEnabled="{Binding IsIdle}">
+                <ListView.ItemTemplate><DataTemplate>
+                    <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <Button Content="{Binding Label}" Tag="{Binding}" Click="OnOpen" IsEnabled="{Binding CanOpen}" Style="{StaticResource TaskTitleButtonStyle}" />
+                            <TextBlock Text="{Binding EventSummary}" Style="{StaticResource BodyStyle}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Actions" Tag="{Binding}" AutomationProperties.Name="Event actions">
+                            <Button.Flyout><MenuFlyout Opening="OnActionsOpening" /></Button.Flyout>
+                        </Button>
+                    </Grid>
+                </DataTemplate></ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+    </Grid>
+</UserControl>
