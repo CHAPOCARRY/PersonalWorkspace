@@ -24,6 +24,38 @@ public static class WorkspaceMigrationCatalog
             );
             CREATE INDEX IX_WorkspaceItems_Collection ON WorkspaceItems(ItemType, DeletedAtUtc, ArchivedAtUtc);
             CREATE INDEX IX_Tasks_ScheduledDate ON Tasks(ScheduledDate) WHERE ScheduledDate IS NOT NULL;
+            """),
+        new(2, "Create tags and spaces", """
+            CREATE TABLE Tags (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Name TEXT NOT NULL COLLATE WORKSPACE_NAME UNIQUE CHECK(length(trim(Name)) > 0),
+                Color INTEGER NULL CHECK(Color BETWEEN 1 AND 4),
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL
+            );
+            CREATE TABLE Spaces (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Name TEXT NOT NULL COLLATE WORKSPACE_NAME UNIQUE CHECK(length(trim(Name)) > 0),
+                Description TEXT NOT NULL DEFAULT '',
+                Icon TEXT NOT NULL DEFAULT '',
+                Color INTEGER NULL CHECK(Color BETWEEN 1 AND 4),
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL,
+                ArchivedAtUtc TEXT NULL
+            );
+            CREATE TABLE ItemTags (
+                ItemId TEXT NOT NULL REFERENCES WorkspaceItems(Id) ON DELETE CASCADE,
+                TagId TEXT NOT NULL REFERENCES Tags(Id) ON DELETE CASCADE,
+                PRIMARY KEY(ItemId, TagId)
+            );
+            CREATE TABLE ItemSpaces (
+                ItemId TEXT NOT NULL REFERENCES WorkspaceItems(Id) ON DELETE CASCADE,
+                SpaceId TEXT NOT NULL REFERENCES Spaces(Id) ON DELETE CASCADE,
+                PRIMARY KEY(ItemId, SpaceId)
+            );
+            CREATE INDEX IX_ItemTags_TagId ON ItemTags(TagId, ItemId);
+            CREATE INDEX IX_ItemSpaces_SpaceId ON ItemSpaces(SpaceId, ItemId);
             """)
     ];
 }

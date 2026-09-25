@@ -92,6 +92,11 @@ public sealed class ProfileTests : IAsyncLifetime
         Assert.Equal("WorkspaceItems", reader.GetString(0));
         Assert.True(await reader.ReadAsync());
         Assert.Equal("Tasks", reader.GetString(0));
+        foreach (var table in new[] { "Tags", "Spaces", "ItemTags", "ItemSpaces" })
+        {
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(table, reader.GetString(0));
+        }
         Assert.False(await reader.ReadAsync());
     }
 

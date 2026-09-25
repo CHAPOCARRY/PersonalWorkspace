@@ -22,6 +22,7 @@ public sealed class SqliteConnectionFactory(IApplicationPaths paths)
         {
             await connection.OpenAsync(cancellationToken);
             connection.CreateCollation("PROFILE_NAME", (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left, right));
+            connection.CreateCollation("WORKSPACE_NAME", (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left, right));
             return connection;
         }
         catch

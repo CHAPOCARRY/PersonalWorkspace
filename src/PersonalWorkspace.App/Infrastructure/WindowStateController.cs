@@ -39,7 +39,7 @@ public sealed class WindowStateController(ISettingsService settings, ILogger<Win
         {
             if (closeApproved) return;
             args.Cancel = true;
-            if (viewModel.Profiles.IsBusy || viewModel.Tasks.IsBusy) return;
+            if (viewModel.Profiles.IsBusy || viewModel.Tasks.IsBusy || viewModel.Organization.IsBusy) return;
             if (saving) return;
             saving = true;
             try

@@ -21,6 +21,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
     private readonly SqliteTaskRepository repository = new();
     private readonly TestClock clock = new();
     private readonly TaskService tasks;
+    private readonly OrganizationService organization;
     private Guid profileId;
 
     public TaskCoreTests()
@@ -33,6 +34,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
             new SqliteSettingsService(connections, NullLogger<SqliteSettingsService>.Instance), new ProfileFiles(paths),
             initializer, current, NullLogger<ProfileService>.Instance, gate);
         tasks = new TaskService(repository, current, gate, clock, NullLogger<TaskService>.Instance);
+        organization = new OrganizationService(new SqliteOrganizationRepository(), current, gate, clock, NullLogger<OrganizationService>.Instance);
     }
 
     public async Task InitializeAsync()
@@ -45,13 +47,13 @@ public sealed class TaskCoreTests : IAsyncLifetime
     private Task<IReadOnlyList<TaskItem>> Query(TaskCollection collection = TaskCollection.Active) => tasks.GetAsync(profileId, collection);
 
     [Fact]
-    public async Task MigrationCreatesOnlyTaskCoreAndIsIdempotent()
+    public async Task MigrationRetainsTaskCoreAndIsIdempotent()
     {
         var task = await Create();
         await initializer.InitializeAsync(profileId, false);
         await initializer.InitializeAsync(profileId, false);
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE Version = 1;"));
-        Assert.Equal(3L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
+        Assert.Equal(7L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
         Assert.Equal(task, await tasks.FindAsync(Ref(task)));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();
         using var command = global.CreateCommand();
@@ -79,7 +81,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         check.CommandText = "SELECT COUNT(*) FROM Tasks;";
         Assert.Equal(0L, await check.ExecuteScalarAsync());
         check.CommandText = "SELECT COUNT(*) FROM SchemaMigrations;";
-        Assert.Equal(1L, await check.ExecuteScalarAsync());
+        Assert.Equal(2L, await check.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -328,7 +330,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         var task = await Create("Personal task");
         var navigation = new NavigationService();
         navigation.Navigate(new NavigationRoute("Tasks"));
-        var model = new TaskWorkspaceViewModel(tasks, current, navigation, NullLogger<TaskWorkspaceViewModel>.Instance);
+        var model = new TaskWorkspaceViewModel(tasks, current, navigation, NullLogger<TaskWorkspaceViewModel>.Instance, organization);
         await model.ReloadAsync();
         model.OpenCommand.Execute(Assert.Single(model.Rows));
         await model.ReloadAsync();
@@ -355,7 +357,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         var delayed = new DelayedReadService(tasks);
         var navigation = new NavigationService();
         navigation.Navigate(new NavigationRoute("Tasks"));
-        var model = new TaskWorkspaceViewModel(delayed, current, navigation, NullLogger<TaskWorkspaceViewModel>.Instance);
+        var model = new TaskWorkspaceViewModel(delayed, current, navigation, NullLogger<TaskWorkspaceViewModel>.Instance, organization);
         var oldRead = model.ReloadAsync();
         await delayed.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await profiles.CreateAsync("Testing");
@@ -372,7 +374,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         await tasks.CreateAsync(profileId, new TaskDraft("Scheduled", ScheduledDate: DateOnly.FromDateTime(clock.GetLocalNow().DateTime)));
         var navigation = new NavigationService();
         navigation.Navigate(new NavigationRoute("Tasks"));
-        var model = new TaskWorkspaceViewModel(tasks, current, navigation, NullLogger<TaskWorkspaceViewModel>.Instance);
+        var model = new TaskWorkspaceViewModel(tasks, current, navigation, NullLogger<TaskWorkspaceViewModel>.Instance, organization);
         await model.ReloadAsync();
         model.Filter = "No match";
         Assert.Empty(model.Rows);

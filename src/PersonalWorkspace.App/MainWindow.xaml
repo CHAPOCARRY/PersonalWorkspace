@@ -29,9 +29,9 @@
                 <NavigationViewItem Content="Lists" Tag="Lists" Icon="List" />
                 <NavigationViewItemSeparator />
                 <NavigationViewItemHeader Content="SPACES" />
-                <NavigationViewItem Content="Available in a future phase" IsEnabled="False" SelectsOnInvoked="False" />
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Tags and spaces" Tag="Organization" Icon="Manage" />
                 <NavigationViewItem Content="Archived" Tag="Archived" Icon="Folder" />
                 <NavigationViewItem Content="Trash" Tag="Trash" Icon="Delete" />
                 <NavigationViewItem Content="Settings" Tag="Settings" Icon="Setting" />
@@ -53,6 +53,9 @@
                 </ScrollViewer>
                 <Grid Visibility="{Binding ShowTasks, Converter={StaticResource BoolVisibility}}">
                     <views:TaskWorkspaceView DataContext="{Binding Tasks}" />
+                </Grid>
+                <Grid Visibility="{Binding ShowOrganization, Converter={StaticResource BoolVisibility}}">
+                    <views:OrganizationView DataContext="{Binding Organization}" />
                 </Grid>
                 <views:ProfileManagementView DataContext="{Binding Profiles}" Visibility="{Binding IsManaging, Converter={StaticResource BoolVisibility}}" />
             </Grid>

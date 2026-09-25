@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles** and **Phase 2: Task Core** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
+The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles**, **Phase 2: Task Core**, and **Phase 3: Tags and Spaces** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
 
 ## Scope
 
@@ -240,3 +240,45 @@ Manual acceptance:
 6. Verify detail editing, clear-date behavior, keyboard focus, narrow windows, and Windows scaling. Calendar must remain a placeholder.
 
 Phase 2 intentionally has no advanced filtering, paging, sorting UI, unsaved-change prompt, rich text, attachment handling, subtasks, dependencies, recurrence, carry-over, events, calendar UI, boards, notifications, or later-phase entities. Library queries currently load the selected collection in memory; rows use a virtualized native ListView. Very large workspaces will need bounded queries in a future phase. SQLite disk calls remain synchronous internally despite asynchronous contracts; Phase 2 adds no background sync or scheduler.
+
+## Phase 3: Tags and Spaces
+
+### Models, migration, and relationships
+
+Tags and Spaces are independent, flat organization entities inside each profile's `workspace.db`. A Tag has a GUID, name, optional color, and UTC creation/update timestamps. A Space additionally has description, icon text, sort order, and nullable UTC archive timestamp. Tags classify items; Spaces organize them. Tags are not children of Spaces, and neither entity owns a Task.
+
+Workspace migration **2: Create tags and spaces** adds `Tags`, `Spaces`, `ItemTags`, and `ItemSpaces`. Workspace migration 1, both global migrations, and the shared ledger runner remain unchanged. Existing Phase 2 workspaces upgrade when opened; new profiles apply both migrations. No organization data is stored in `app.db`.
+
+Each relationship has a composite primary key `(ItemId, TagId)` or `(ItemId, SpaceId)` and foreign keys with delete cascades. Item IDs reference `WorkspaceItems`, allowing future item types to reuse the same organization infrastructure without task-specific ownership. Reverse indexes support entity-to-item lookups and cascade deletion. A Task assigned to Personal and Training remains one `WorkspaceItems` row and one `Tasks` row. Removing an assignment never moves or clones it. Physically deleting an item cascades its links but preserves the Tags and Spaces.
+
+Names are required, trimmed, Unicode NFC-normalized, and unique under `StringComparer.OrdinalIgnoreCase` within each entity kind and profile. Archived Spaces retain their names. `WORKSPACE_NAME`, registered on every application SQLite connection, enforces the same case-insensitive uniqueness. External SQLite editors must register an equivalent collation. Tag display prefixes `#`; stored names are not required to contain it. Optional colors use a closed None/Blue/Green/Amber/Red palette, persisted as NULL or integer 1–4. Presentation maps these to existing semantic design brushes, used only for small indicators/icons. Space sort order is assigned on creation and preserved on edit; there is no drag ordering.
+
+### Services and transaction boundaries
+
+Core defines organization records, `WorkspaceItemReference`, snapshot/filter semantics, and repository/service contracts. `OrganizationService` validates input, resolves current profile under the existing shared workspace operation gate, rejects stale profile IDs before database access, and delegates to `SqliteOrganizationRepository`. Profile lifecycle implementation and file handling are unchanged. The repository uses short-lived, unpooled connections, parameterized values, and fixed enum-selected SQL identifiers. Catalog plus relationship reads share one transaction. Writes use immediate transactions; assignments require an existing non-deleted item and, when adding a Space, an active Space. Repeated assignment is idempotent and database uniqueness remains enforced.
+
+Organization changes deliberately **do not update WorkspaceItem.UpdatedAtUtc** or any other Task field. That timestamp continues to describe task content/lifecycle edits; organization metadata has its own timestamps. Assignments, removals, Tag deletion, and Space archive/restore leave task identity, title, description, status, priority, date, and timestamps intact. Meaningful Tag/Space edits advance their own UTC timestamp monotonically; no-op saves/archive/restore leave it unchanged.
+
+Archiving a Space retains its assignments and leaves its Tasks active. It disappears from the normal sidebar and Library Space filter but remains editable and restorable in Manage spaces. Existing archived assignments appear in task detail and may be removed; restore a Space before adding new assignments. There is no Space Trash or permanent Space deletion in Phase 3.
+
+Deleting a Tag removes that Tag and its assignments transactionally, never the items. The UI always confirms the Tag's name and assignment count with Cancel as default. Task archive/trash semantics are unchanged; normal Space views query the active Task collection, so archived/deleted Tasks cannot leak through their retained links.
+
+### Presentation and profile switching
+
+The existing task view serves `Space/{guid}` as well as the Library, Today, Archived, Trash, and detail. The sidebar lists active Spaces, includes `+ New Space`, and preserves native collapsed-pane navigation. Space task actions call the same task commands as the Library; detail's Back returns to the originating Space. An archived/missing Space link produces a friendly unavailable message.
+
+The Library combines optional Tag and active Space selections with its existing title filter using AND semantics. Space views have a fixed Space selection plus optional Tag/title filters. These filters do not affect Today, Archived, or Trash. Today retains its local-date query, completed-task behavior, timer refresh, and layout.
+
+Task detail has native Tags/Spaces expanders listing available entities with Assign/Remove actions. Multiple assignments are supported. These actions save immediately and preserve unsaved task edits; task content still uses its existing explicit Save. Quick create stays unchanged: save the Task, then assign it in detail. The lightweight Tags and spaces management view supports create/rename/color editing, Space description/icon editing and archive/restore, and confirmed Tag deletion. Native controls and existing design tokens are reused; code-behind only bridges control events, dialogs, and sidebar presentation.
+
+Task and organization view models clear catalog, rows, filters, choices, and drafts on profile changes; Space/detail routes return to Tasks. Revision counters reject delayed reads from a prior profile or navigation request. Actions retain their originating profile ID, and the shared gate makes profile switching/deletion wait for in-flight writes. No cross-profile catalog is retained. Window close waits for organization work as well as task/profile operations.
+
+### Verification and limitations
+
+Automated coverage includes a populated Phase 2 upgrade with the original ledger entry preserved, migration idempotency, global/workspace separation, Unicode and case-insensitive names, palette validation, rename/no-op timestamps, many-to-many uniqueness/removal, database foreign keys, transactional cascade rollback, Tag deletion, Space archive/restore, shared task status across Space views, combined filters, lifecycle exclusions, profile isolation, stale actions, delayed reads, and switching during an organization write. UI-independent organization view models are source-linked into the existing test project. No NuGet packages or versions were added.
+
+The native UI was exercised using temporary profiles: create Personal/Training Spaces and health/strength/urgent Tags; create `20 push-ups`, assign both Spaces and two Tags; mark Done through Training and verify Personal/Library; remove only Training; create `Prepare report` with urgent and filter the Library; archive/restore Personal without changing Tasks; cancel then confirm Tag deletion; switch profiles and restart to verify isolation/persistence. Temporary profiles were removed via named confirmation dialogs and the original profile selection restored.
+
+For manual acceptance, repeat that flow, then inspect keyboard navigation, a collapsed sidebar, and Windows display scaling. Also check Today, Archived, and Trash after assigning and changing task lifecycle state. No later-phase destinations should become functional.
+
+Phase 3 defers permanent Space deletion, inline entity creation during assignment, nested organization, manual ordering, and later WorkspaceItem types. Task duplication retains Phase 2 behavior and creates an unassigned copy. There is no global search, advanced color editor, audit/history, or unsaved-change prompt. Catalogs and relationships are loaded into an in-memory snapshot, consistent with the current unpaged Task Library; very large workspaces will need bounded database filtering and assignment pickers in a later phase. No Phase 4 functionality is included.
