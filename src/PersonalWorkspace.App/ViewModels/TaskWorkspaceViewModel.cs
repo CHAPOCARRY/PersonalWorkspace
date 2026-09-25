@@ -9,6 +9,10 @@ namespace PersonalWorkspace.App.ViewModels;
 public sealed partial class TaskWorkspaceViewModel : ObservableObject
 {
     private readonly ITaskService service;
+    private readonly IOrganizationService organization;
+    private OrganizationSnapshot catalog = OrganizationSnapshot.Empty;
+    private OrganizationFilter? tagFilter, spaceFilter;
+    private NavigationRoute returnRoute = new("Tasks");
     private readonly ICurrentProfile current;
     private readonly INavigationService navigation;
     private readonly ILogger<TaskWorkspaceViewModel> logger;
@@ -27,12 +31,12 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private TaskStatus status;
     private TaskPriority priority;
     private DateTimeOffset? scheduledDate;
-    private string returnDestination = "Tasks";
     private DateOnly displayedToday = DateOnly.FromDateTime(DateTime.Now);
 
-    public TaskWorkspaceViewModel(ITaskService service, ICurrentProfile current, INavigationService navigation, ILogger<TaskWorkspaceViewModel> logger)
+    public TaskWorkspaceViewModel(ITaskService service, ICurrentProfile current, INavigationService navigation, ILogger<TaskWorkspaceViewModel> logger, IOrganizationService organization)
     {
         this.service = service;
+        this.organization = organization;
         this.current = current;
         this.navigation = navigation;
         this.logger = logger;
@@ -41,7 +45,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         navigation.Changed += (_, _) => { OnPropertyChanged(nameof(IsTaskArea)); _ = ReloadAsync(); };
     }
 
-    public bool IsTaskArea => navigation.Current.Destination is "Tasks" or "Today" or "Archived" or "Trash" or "Task";
+    public bool IsTaskArea => navigation.Current.Destination is "Tasks" or "Today" or "Archived" or "Trash" or "Task" or "Space";
     public bool IsEditor => navigation.Current.Destination == "Task" || navigation.Current is { Destination: "Tasks", EntityId: "new" };
     public bool IsDetail => navigation.Current.Destination == "Task";
     public bool IsList => !IsEditor;
@@ -49,14 +53,25 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     public bool IsBusy => busy || loading;
     public bool CanSave => IsIdle && editorProfile is not null;
     public bool IsEmpty => !loading && !IsEditor && !Rows.Any();
-    public bool CanFilter => navigation.Current.Destination == "Tasks" && !IsEditor;
+    public bool CanFilter => (navigation.Current.Destination is "Tasks" or "Space") && !IsEditor;
+    public bool CanChooseSpaceFilter => navigation.Current.Destination == "Tasks" && !IsEditor;
+    private Guid? RouteSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
     public bool IsToday => navigation.Current.Destination == "Today";
-    public string Heading => IsEditor ? (IsDetail ? "Task detail" : "New task") : navigation.Current.Destination;
-    public string EmptyMessage => IsToday ? "No tasks scheduled for today." : CanFilter && filter.Length > 0 ? "No tasks match your title filter." : "No tasks here yet.";
+    public string Heading => IsEditor ? (IsDetail ? "Task detail" : "New task") : navigation.Current.Destination == "Space"
+        ? "Space — " + (catalog.Spaces.FirstOrDefault(space => space.Id == RouteSpaceId)?.Name ?? "Unavailable") : navigation.Current.Destination;
+    public string EmptyMessage => IsToday ? "No tasks scheduled for today." : CanFilter && (filter.Length > 0 || TagFilter?.Id is not null || SpaceFilter?.Id is not null)
+        ? "No tasks match your filters." : "No tasks here yet.";
     public string? Error { get => error; private set => SetProperty(ref error, value); }
     public string Filter { get => filter; set { if (SetProperty(ref filter, value)) NotifyRows(); } }
     public IEnumerable<TaskRowViewModel> Rows => CanFilter
-        ? rows.Where(row => row.Title.Contains(Filter.Trim(), StringComparison.CurrentCultureIgnoreCase)) : rows;
+        ? rows.Where(row => row.Title.Contains(Filter.Trim(), StringComparison.CurrentCultureIgnoreCase)
+            && catalog.Matches(row.Task.Item.Id, TagFilter?.Id, RouteSpaceId ?? SpaceFilter?.Id)) : rows;
+    public IReadOnlyList<OrganizationFilter> TagFilters { get; private set; } = [new(null, "All tags")];
+    public IReadOnlyList<OrganizationFilter> SpaceFilters { get; private set; } = [new(null, "All spaces")];
+    public OrganizationFilter? TagFilter { get => tagFilter; set { if (SetProperty(ref tagFilter, value)) NotifyRows(); } }
+    public OrganizationFilter? SpaceFilter { get => spaceFilter; set { if (SetProperty(ref spaceFilter, value)) NotifyRows(); } }
+    public IReadOnlyList<OrganizationChoice> TagChoices { get; private set; } = [];
+    public IReadOnlyList<OrganizationChoice> SpaceChoices { get; private set; } = [];
     public TaskRowViewModel? Detail { get => detail; private set => SetProperty(ref detail, value); }
     public string EditorTitle { get => title; set => SetProperty(ref title, value); }
     public string EditorDescription { get => description; set => SetProperty(ref description, value); }
@@ -80,6 +95,11 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         try
         {
             if (profileId is null || !IsTaskArea) return;
+            var loadedCatalog = await organization.GetAsync(profileId.Value);
+            if (request != revision) return;
+            catalog = loadedCatalog;
+            if (route.Destination == "Space" && !catalog.Spaces.Any(space => space.Id == RouteSpaceId && space.ArchivedAtUtc is null))
+                throw new OrganizationValidationException("This space is unavailable or archived. Manage spaces to restore it.");
             if (route is { Destination: "Tasks", EntityId: "new" })
             {
                 editorProfile = profileId;
@@ -134,7 +154,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         }
         finally
         {
-            if (request == revision) { loading = false; NotifyView(); }
+            if (request == revision) { loading = false; NotifyOrganization(); NotifyView(); }
         }
     }
 
@@ -146,14 +166,18 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         observedProfile = current.Current?.Id;
         ++revision;
         rows = [];
+        catalog = OrganizationSnapshot.Empty;
+        TagFilter = SpaceFilter = null;
+        returnRoute = new("Tasks");
         editorReference = null;
         editorProfile = null;
         Detail = null;
         EditorTitle = EditorDescription = Filter = "";
         EditorScheduledDate = null;
         Error = null;
+        NotifyOrganization();
         NotifyView();
-        if (IsEditor) navigation.Navigate(new NavigationRoute("Tasks"));
+        if (IsEditor || navigation.Current.Destination == "Space") navigation.Navigate(new NavigationRoute("Tasks"));
         else _ = ReloadAsync();
     }
 
@@ -161,7 +185,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private void NewTask()
     {
         if (!IsIdle) return;
-        returnDestination = IsToday ? "Today" : "Tasks";
+        returnRoute = navigation.Current.Destination is "Today" or "Space" ? navigation.Current : new("Tasks");
         navigation.Navigate(new NavigationRoute("Tasks", "new"));
     }
 
@@ -169,13 +193,13 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private void Browse() => navigation.Navigate(new NavigationRoute("Tasks"));
 
     [RelayCommand]
-    private void Back() => navigation.Navigate(new NavigationRoute(returnDestination));
+    private void Back() => navigation.Navigate(returnRoute);
 
     [RelayCommand]
     private void Open(TaskRowViewModel row)
     {
         if (!IsIdle || row.ProfileId != current.Current?.Id) return;
-        returnDestination = navigation.Current.Destination is "Today" or "Archived" ? navigation.Current.Destination : "Tasks";
+        returnRoute = navigation.Current.Destination is "Today" or "Archived" or "Space" ? navigation.Current : new("Tasks");
         navigation.Navigate(new NavigationRoute("Task", row.Task.Item.Id.ToString("D")));
     }
 
@@ -206,7 +230,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private Task ApplyAsync(TaskRowViewModel row, TaskAction action) => MutateAsync(async () =>
     {
         await service.ApplyAsync(row.Reference, action);
-        if (IsEditor && current.Current?.Id == row.ProfileId) navigation.Navigate(new NavigationRoute(returnDestination));
+        if (IsEditor && current.Current?.Id == row.ProfileId) navigation.Navigate(returnRoute);
     });
 
     [RelayCommand]
@@ -218,6 +242,44 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
 
     [RelayCommand]
     private Task PermanentlyDeleteConfirmedAsync(TaskRowViewModel row) => MutateAsync(() => service.PermanentlyDeleteAsync(row.Reference));
+
+    [RelayCommand]
+    private async Task ToggleAssignmentAsync(OrganizationChoice choice)
+    {
+        if (!IsIdle || editorReference?.ItemId != choice.Item.ItemId || current.Current?.Id != choice.Item.ProfileId) return;
+        var request = revision;
+        busy = true; Error = null; NotifyView();
+        try
+        {
+            await organization.AssignAsync(choice.Item, choice.Kind, choice.Id, !choice.IsAssigned);
+            var loaded = await organization.GetAsync(choice.Item.ProfileId);
+            if (request == revision) { catalog = loaded; NotifyOrganization(); }
+        }
+        catch (Exception exception) { if (request == revision) Report(exception); }
+        finally { busy = false; NotifyView(); }
+    }
+
+    [RelayCommand]
+    private void ManageOrganization() => navigation.Navigate(new("Organization"));
+
+    private void NotifyOrganization()
+    {
+        var selectedTag = TagFilter?.Id;
+        var selectedSpace = SpaceFilter?.Id;
+        OrganizationFilter[] tags = [new(null, "All tags"), .. catalog.Tags.Select(tag => new OrganizationFilter(tag.Id, "#" + tag.Name))];
+        OrganizationFilter[] spaces = [new(null, "All spaces"), .. catalog.Spaces.Where(space => space.ArchivedAtUtc is null).Select(space => new OrganizationFilter(space.Id, space.Name))];
+        // Keep native ComboBox item identities stable across task edits and assignment changes.
+        if (!TagFilters.SequenceEqual(tags)) { TagFilters = tags; OnPropertyChanged(nameof(TagFilters)); }
+        if (!SpaceFilters.SequenceEqual(spaces)) { SpaceFilters = spaces; OnPropertyChanged(nameof(SpaceFilters)); }
+        TagFilter = TagFilters.FirstOrDefault(filter => filter.Id == selectedTag) ?? TagFilters[0];
+        SpaceFilter = SpaceFilters.FirstOrDefault(filter => filter.Id == selectedSpace) ?? SpaceFilters[0];
+        TagChoices = editorReference is { } reference ? catalog.Tags.Select(tag => new OrganizationChoice(new(reference.ProfileId, reference.ItemId),
+            tag.Id, OrganizationKind.Tag, tag.Name, tag.Color, catalog.ItemTags.Contains(new(reference.ItemId, tag.Id)))).ToArray() : [];
+        SpaceChoices = editorReference is { } item ? catalog.Spaces.Where(space => space.ArchivedAtUtc is null || catalog.ItemSpaces.Contains(new(item.ItemId, space.Id)))
+            .Select(space => new OrganizationChoice(new(item.ProfileId, item.ItemId), space.Id, OrganizationKind.Space, space.Name, space.Color,
+                catalog.ItemSpaces.Contains(new(item.ItemId, space.Id)), space.ArchivedAtUtc is not null)).ToArray() : [];
+        OnPropertyChanged(nameof(TagChoices)); OnPropertyChanged(nameof(SpaceChoices));
+    }
 
     private async Task MutateAsync(Func<Task> operation)
     {
@@ -237,7 +299,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
 
     private void Report(Exception exception)
     {
-        if (exception is TaskValidationException or WorkspaceChangedException or TaskOperationException) Error = exception.Message;
+        if (exception is TaskValidationException or WorkspaceChangedException or TaskOperationException or OrganizationValidationException or OrganizationOperationException) Error = exception.Message;
         else { logger.LogError(exception, "Task presentation operation failed"); Error = "Tasks could not be updated. Please try again."; }
     }
 
@@ -251,7 +313,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private void NotifyView()
     {
         foreach (var property in new[] { nameof(IsIdle), nameof(IsBusy), nameof(CanSave), nameof(IsEditor), nameof(IsDetail), nameof(IsList),
-            nameof(CanFilter), nameof(IsToday), nameof(Heading), nameof(CreatedText), nameof(ModifiedText) }) OnPropertyChanged(property);
+            nameof(CanFilter), nameof(CanChooseSpaceFilter), nameof(IsToday), nameof(Heading), nameof(CreatedText), nameof(ModifiedText) }) OnPropertyChanged(property);
         NotifyRows();
     }
 }

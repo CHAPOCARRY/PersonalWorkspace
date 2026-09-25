@@ -57,6 +57,10 @@ public sealed partial class TaskWorkspaceView : UserControl
     private void OnArchive(object sender, RoutedEventArgs args) => Execute(sender, ViewModel.ArchiveCommand);
     private void OnRestore(object sender, RoutedEventArgs args) => Execute(sender, ViewModel.RestoreCommand);
     private void OnTrash(object sender, RoutedEventArgs args) => Execute(sender, ViewModel.TrashCommand);
+    private void OnAssignment(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement { Tag: OrganizationChoice choice }) ViewModel.ToggleAssignmentCommand.Execute(choice);
+    }
 
     private async void OnPermanentDelete(object sender, RoutedEventArgs args)
     {

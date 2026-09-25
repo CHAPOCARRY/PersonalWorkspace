@@ -23,16 +23,20 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public ProfilesViewModel Profiles { get; }
     public TaskWorkspaceViewModel Tasks { get; }
-    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea;
+    public OrganizationViewModel Organization { get; }
+    public Guid? ActiveSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
+    public bool ShowOrganization => Profiles.ShowPlaceholder && navigation.Current.Destination == "Organization";
+    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization;
     public bool ShowTasks => Profiles.ShowPlaceholder && Tasks.IsTaskArea;
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks)
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization)
     {
         this.settings = settings;
         this.navigation = navigation;
         this.logger = logger;
         Profiles = profiles;
         Tasks = tasks;
+        Organization = organization;
         Profiles.PropertyChanged += (_, _) => NotifyContent();
         Tasks.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Tasks.IsTaskArea)) NotifyContent(); };
         navigation.Changed += (_, _) => UpdateDestination();
@@ -43,12 +47,26 @@ public sealed partial class ShellViewModel : ObservableObject
         IsSidebarExpanded = !await settings.GetAsync(SettingKeys.SidebarCollapsed, false, cancellationToken);
         UpdateDestination();
         await Tasks.ReloadAsync();
+        await Organization.ReloadAsync();
     }
 
     public void Navigate(string destination)
     {
         Profiles.CloseManagementCommand.Execute(null);
         navigation.Navigate(new NavigationRoute(destination));
+    }
+
+    public void OpenSpace(OrganizationRow space)
+    {
+        if (space.ProfileId != Profiles.CurrentId) return;
+        Profiles.CloseManagementCommand.Execute(null);
+        navigation.Navigate(new("Space", space.Id.ToString("D")));
+    }
+
+    public void NewSpace()
+    {
+        Profiles.CloseManagementCommand.Execute(null);
+        Organization.NewSpace();
     }
 
     [RelayCommand]
@@ -82,12 +100,15 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ShowPlaceholder));
         OnPropertyChanged(nameof(ShowTasks));
+        OnPropertyChanged(nameof(ShowOrganization));
     }
 
     public void ReportError(string message) => ErrorMessage = message;
 
     private void UpdateDestination()
     {
+        NotifyContent();
+        OnPropertyChanged(nameof(ActiveSpaceId));
         Title = navigation.Current.Destination == "Task" ? "Tasks" : navigation.Current.Destination;
         Description = Title switch
         {

@@ -9,7 +9,14 @@
             <Button Grid.Column="1" Content="Browse tasks" Command="{Binding BrowseCommand}" Visibility="{Binding IsToday, Converter={StaticResource BoolVisibility}}" />
             <Button Grid.Column="2" Content="+ Task" Command="{Binding NewTaskCommand}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsList, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="NewTask" />
         </Grid>
-        <TextBox Grid.Row="1" PlaceholderText="Filter task titles…" Text="{Binding Filter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding CanFilter, Converter={StaticResource BoolVisibility}}" AutomationProperties.Name="Filter task titles" />
+        <StackPanel Grid.Row="1" Spacing="{StaticResource Space8}" Visibility="{Binding CanFilter, Converter={StaticResource BoolVisibility}}">
+            <TextBox PlaceholderText="Filter task titles…" Text="{Binding Filter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Filter task titles" />
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}">
+                <ComboBox Header="Tag" ItemsSource="{Binding TagFilters}" DisplayMemberPath="Name" SelectedItem="{Binding TagFilter, Mode=TwoWay}" AutomationProperties.AutomationId="TagFilter" />
+                <ComboBox Header="Space" ItemsSource="{Binding SpaceFilters}" DisplayMemberPath="Name" SelectedItem="{Binding SpaceFilter, Mode=TwoWay}" Visibility="{Binding CanChooseSpaceFilter, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="SpaceFilter" />
+                <Button Content="Manage tags and spaces" Command="{Binding ManageOrganizationCommand}" VerticalAlignment="Bottom" />
+            </StackPanel>
+        </StackPanel>
         <StackPanel Grid.Row="2" Spacing="{StaticResource Space8}">
             <TextBlock Text="{Binding Error}" Style="{StaticResource BodyStyle}" Foreground="{ThemeResource Danger}" AutomationProperties.LiveSetting="Polite" />
             <ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" />
@@ -64,6 +71,35 @@
                     <Button Content="Move to Trash" Click="OnTrash" Tag="{Binding Detail}" IsEnabled="{Binding CanSave}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
                 </StackPanel>
                 <TextBlock Text="Select Save to keep your changes." Style="{StaticResource BodyStyle}" />
+                <StackPanel Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space12}">
+                    <TextBlock Text="Organization" FontSize="{StaticResource SectionTitle}" />
+                    <TextBlock Text="Assign or remove tags and spaces below. These changes save immediately." Style="{StaticResource BodyStyle}" />
+                    <Expander IsEnabled="{Binding IsIdle}" Header="Tags" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding TagChoices}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Ellipse Width="{StaticResource OrganizationIndicatorSize}" Height="{StaticResource OrganizationIndicatorSize}" Fill="{Binding Color, Converter={StaticResource OrganizationColor}}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="2" Content="{Binding ActionLabel}" Click="OnAssignment" Tag="{Binding}" AutomationProperties.Name="{Binding ActionDescription}" />
+                                </Grid>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Expander>
+                    <Expander IsEnabled="{Binding IsIdle}" Header="Spaces" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding SpaceChoices}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Ellipse Width="{StaticResource OrganizationIndicatorSize}" Height="{StaticResource OrganizationIndicatorSize}" Fill="{Binding Color, Converter={StaticResource OrganizationColor}}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="2" Content="{Binding ActionLabel}" Click="OnAssignment" Tag="{Binding}" AutomationProperties.Name="{Binding ActionDescription}" />
+                                </Grid>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Expander>
+                    <Button Content="Manage tags and spaces" Command="{Binding ManageOrganizationCommand}" />
+                </StackPanel>
                 <StackPanel Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space8}">
                     <TextBlock Text="Created" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" />
                     <TextBlock Text="{Binding CreatedText}" Style="{StaticResource BodyStyle}" />
