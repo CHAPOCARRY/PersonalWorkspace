@@ -7,6 +7,14 @@ namespace PersonalWorkspace.Services;
 public sealed class TaskService(ITaskRepository repository, ICurrentProfile current, IWorkspaceOperationGate gate,
     TimeProvider time, ILogger<TaskService> logger) : ITaskService
 {
+    public Task<TaskItem> RecordActualAsync(TaskReference task, decimal? actual, CancellationToken cancellationToken = default) =>
+        MutateAsync(task, existing =>
+        {
+            RequireEditable(existing);
+            var value = existing.Value ?? throw new TaskValidationException("Choose a value type and save its target before recording an actual.");
+            return existing with { Value = (value with { Actual = actual }).Validate() };
+        }, cancellationToken, evaluateValue: true);
+
     public Task<TaskGraph> GetGraphAsync(Guid profileId, CancellationToken cancellationToken = default) =>
         RunAsync(profileId, workspace => repository.GetGraphAsync(workspace, cancellationToken), cancellationToken);
 
@@ -67,16 +75,16 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         return updated with { Item = updated.Item with { UpdatedAtUtc = now } };
     }
 
-    private void Recalculate(TaskGraph graph)
+    private void Recalculate(TaskGraph graph, Guid? valueTask = null)
     {
         var order = graph.CompletionOrder(); // Includes hierarchy AND dependency prerequisite edges.
         var children = graph.Tasks.Values.Where(t => t.ParentTaskId.HasValue).ToLookup(t => t.ParentTaskId!.Value, t => t.Item.Id);
         var prerequisites = graph.Prerequisites();
         foreach (var id in order)
         {
-            if (!children.Contains(id)) continue; // Never auto-complete a leaf dependent or sibling.
+            if (!children.Contains(id) && id != valueTask) continue; // A blocker change alone never completes a leaf dependent.
             var task = graph.Tasks[id];
-            var complete = prerequisites[id].All(required => graph.Tasks[required].Status == TaskStatus.Done);
+            var complete = (task.Value?.IsReached ?? true) && prerequisites[id].All(required => graph.Tasks[required].Status == TaskStatus.Done);
             var status = complete ? TaskStatus.Done : task.Status == TaskStatus.Done ? TaskStatus.ToDo : task.Status;
             graph.Tasks[id] = Stamp(task, task with { Status = status });
         }
@@ -98,6 +106,11 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         RunAsync(profileId, async workspace =>
         {
             var task = NewTask(Validate(draft));
+            if (task.Value is { } value)
+            {
+                if (task.Status == TaskStatus.Done && !value.IsReached) throw new TaskValidationException("Record an actual that reaches the target before marking this task Done.");
+                if (value.IsReached) task = task with { Status = TaskStatus.Done };
+            }
             await repository.CreateAsync(workspace, task, cancellationToken);
             return task;
         }, cancellationToken);
@@ -108,14 +121,16 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
             RequireEditable(task);
             var valid = Validate(draft);
             return task with { Item = task.Item with { Title = valid.Title }, Description = valid.Description,
-                Status = valid.Status, Priority = valid.Priority, ScheduledDate = valid.ScheduledDate };
-        }, cancellationToken);
+                Status = valid.Status, Priority = valid.Priority, ScheduledDate = valid.ScheduledDate, Value = valid.Value };
+        }, cancellationToken, evaluateValue: true);
 
     public Task<TaskItem> ChangeStatusAsync(TaskReference reference, TaskStatus status, CancellationToken cancellationToken = default) =>
         MutateAsync(reference, task =>
         {
             RequireEditable(task);
             if (!Enum.IsDefined(status)) throw new TaskValidationException("Select a valid task status.");
+            if (task.Status == TaskStatus.Done && status != TaskStatus.Done && task.Value?.IsReached == true)
+                throw new TaskValidationException("Lower or clear Actual to reopen this value-based task.");
             return task with { Status = status };
         }, cancellationToken);
 
@@ -143,7 +158,8 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         {
             var source = await repository.FindAsync(workspace, reference.ItemId, cancellationToken)
                 ?? throw new TaskValidationException("This task is no longer available.");
-            var duplicate = NewTask(new TaskDraft(source.Item.Title, source.Description, TaskStatus.ToDo, source.Priority, source.ScheduledDate));
+            var duplicate = NewTask(new TaskDraft(source.Item.Title, source.Description, TaskStatus.ToDo, source.Priority, source.ScheduledDate,
+                source.Value is { } value ? value with { Actual = null } : null));
             await repository.CreateAsync(workspace, duplicate, cancellationToken);
             return duplicate;
         }, cancellationToken);
@@ -161,21 +177,24 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
             return true;
         }, cancellationToken);
 
-    private Task<TaskItem> MutateAsync(TaskReference reference, Func<TaskItem, TaskItem> mutation, CancellationToken cancellationToken) =>
+    private Task<TaskItem> MutateAsync(TaskReference reference, Func<TaskItem, TaskItem> mutation, CancellationToken cancellationToken, bool evaluateValue = false) =>
         GraphChangeAsync(reference.ProfileId, graph =>
         {
             var task = Find(graph, reference.ItemId);
             var updated = mutation(task);
             if (updated.Status == TaskStatus.Done && task.Status != TaskStatus.Done)
             {
+                if (updated.Value is { IsReached: false })
+                    throw new TaskValidationException("Record an actual that reaches the target before marking this task Done.");
                 var incomplete = graph.Prerequisites()[task.Item.Id].Where(id => graph.Tasks[id].Status != TaskStatus.Done).ToArray();
                 if (incomplete.Length > 0)
                     throw new TaskValidationException("Complete required subtasks and dependencies first: " + string.Join(", ", incomplete.Take(3).Select(id => graph.Tasks[id].Item.Title)) + ".");
             }
-            if (updated.Status != TaskStatus.Done && task.Status == TaskStatus.Done && graph.Tasks.Values.Any(t => t.ParentTaskId == task.Item.Id))
+            if (updated.Status != TaskStatus.Done && task.Status == TaskStatus.Done && (updated.Value?.IsReached ?? true)
+                && graph.Tasks.Values.Any(t => t.ParentTaskId == task.Item.Id))
                 throw new TaskValidationException("Reopen a completed subtask to reopen this parent task.");
             graph.Tasks[task.Item.Id] = Stamp(task, updated);
-            Recalculate(graph);
+            Recalculate(graph, evaluateValue && updated.Value is not null ? task.Item.Id : null);
             return graph.Tasks[task.Item.Id];
         }, cancellationToken);
 
@@ -183,7 +202,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
     {
         var now = time.GetUtcNow();
         return new TaskItem(new WorkspaceItem(Guid.NewGuid(), WorkspaceItemType.Task, draft.Title, now, now, null, null),
-            draft.Description, draft.Status, draft.Priority, draft.ScheduledDate);
+            draft.Description, draft.Status, draft.Priority, draft.ScheduledDate, Value: draft.Value);
     }
 
     private static TaskDraft Validate(TaskDraft draft)
@@ -191,7 +210,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         if (string.IsNullOrWhiteSpace(draft.Title)) throw new TaskValidationException("Enter a task title.");
         if (!Enum.IsDefined(draft.Status)) throw new TaskValidationException("Select a valid task status.");
         if (!Enum.IsDefined(draft.Priority)) throw new TaskValidationException("Select a valid priority.");
-        return draft with { Title = draft.Title.Trim(), Description = draft.Description ?? "" };
+        return draft with { Title = draft.Title.Trim(), Description = draft.Description ?? "", Value = draft.Value?.Validate() };
     }
 
     private static void RequireEditable(TaskItem task)

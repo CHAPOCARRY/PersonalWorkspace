@@ -12,6 +12,8 @@
     <!-- Exercise UI-independent presentation state without loading WinUI in the test host. -->
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskWorkspaceViewModel.cs" Link="Presentation/TaskWorkspaceViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskRowViewModel.cs" Link="Presentation/TaskRowViewModel.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskValuePresentation.cs" Link="Presentation/TaskValuePresentation.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskValueEditor.cs" Link="Presentation/TaskValueEditor.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/OrganizationChoice.cs" Link="Presentation/OrganizationChoice.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/OrganizationViewModel.cs" Link="Presentation/OrganizationViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/CalendarModels.cs" Link="Presentation/CalendarModels.cs" />

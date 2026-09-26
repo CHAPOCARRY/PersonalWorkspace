@@ -59,6 +59,24 @@
             <StackPanel Spacing="{StaticResource Space24}" MaxWidth="{StaticResource TaskDetailWidth}" HorizontalAlignment="Stretch">
                 <Button Content="Back" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
                 <TextBox Header="Title" Text="{Binding EditorTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskTitle" />
+                <StackPanel Spacing="{StaticResource Space12}">
+                    <ComboBox Header="Task type" ItemsSource="{Binding ValueEditor.Types}" SelectedItem="{Binding ValueEditor.Type, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskValueType" />
+                    <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding ValueEditor.HasValue, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="Value / Progress" FontSize="{StaticResource SectionTitle}" />
+                        <TextBlock Text="{Binding ValueEditor.Hint}" Style="{StaticResource BodyStyle}" />
+                        <Grid ColumnSpacing="{StaticResource Space16}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBox Header="Target" Text="{Binding ValueEditor.Target, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskTarget" />
+                            <TextBox Grid.Column="1" Header="Actual (optional)" Text="{Binding ValueEditor.Actual, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskActual" />
+                        </Grid>
+                        <TextBox Header="Currency code" Text="{Binding ValueEditor.Currency, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding ValueEditor.IsCurrency, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskCurrency" />
+                        <TextBox Header="Unit label" Text="{Binding ValueEditor.Unit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding ValueEditor.IsCustom, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskUnit" />
+                        <TextBlock Text="{Binding ValueEditor.Progress}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="TaskValueProgress" />
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding ValueEditor.VisualProgress}" AutomationProperties.Name="Value progress" />
+                        <Button Content="Record actual" Command="{Binding RecordActualCommand}" IsEnabled="{Binding CanSave}" HorizontalAlignment="Left" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RecordActual" />
+                        <TextBlock Text="Record actual saves only the current result. Use Save below for type, target and other task changes." Style="{StaticResource BodyStyle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
+                    </StackPanel>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space16}">
                     <ComboBox Header="Status" ItemsSource="{Binding Statuses}" SelectedItem="{Binding EditorStatus, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskStatus" />
                     <ComboBox Header="Priority" ItemsSource="{Binding Priorities}" SelectedItem="{Binding EditorPriority, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskPriority" />

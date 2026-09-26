@@ -9,9 +9,12 @@ public enum TaskAction { Archive, RestoreArchive, Trash, RestoreTrash }
 public sealed record WorkspaceItem(Guid Id, WorkspaceItemType ItemType, string Title,
     DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, DateTimeOffset? ArchivedAtUtc, DateTimeOffset? DeletedAtUtc);
 
-public sealed record TaskItem(WorkspaceItem Item, string Description, TaskStatus Status, TaskPriority Priority, DateOnly? ScheduledDate, Guid? ParentTaskId = null);
+public sealed record TaskItem(WorkspaceItem Item, string Description, TaskStatus Status, TaskPriority Priority, DateOnly? ScheduledDate, Guid? ParentTaskId = null, TaskValue? Value = null)
+{
+    public TaskValueType ValueType => Value?.Type ?? TaskValueType.Checkbox;
+}
 public sealed record TaskDraft(string Title, string Description = "", TaskStatus Status = TaskStatus.ToDo,
-    TaskPriority Priority = TaskPriority.None, DateOnly? ScheduledDate = null);
+    TaskPriority Priority = TaskPriority.None, DateOnly? ScheduledDate = null, TaskValue? Value = null);
 // UI actions carry their originating profile so a stale editor can never write to a different workspace.
 public sealed record TaskReference(Guid ProfileId, Guid ItemId);
 public sealed record WorkspaceContext(Guid ProfileId, string DatabasePath);
@@ -36,6 +39,7 @@ public interface ITaskRepository
 
 public interface ITaskService
 {
+    Task<TaskItem> RecordActualAsync(TaskReference task, decimal? actual, CancellationToken cancellationToken = default);
     Task<TaskGraph> GetGraphAsync(Guid profileId, CancellationToken cancellationToken = default);
     Task<TaskItem> CreateSubtaskAsync(TaskReference parent, string title, CancellationToken cancellationToken = default);
     Task SetParentAsync(TaskReference task, Guid? parentId, CancellationToken cancellationToken = default);
