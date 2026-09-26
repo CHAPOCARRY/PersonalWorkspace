@@ -53,7 +53,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         await initializer.InitializeAsync(profileId, false);
         await initializer.InitializeAsync(profileId, false);
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE Version = 1;"));
-        Assert.Equal(8L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
+        Assert.Equal(9L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
         Assert.Equal(task, await tasks.FindAsync(Ref(task)));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();
         using var command = global.CreateCommand();
@@ -81,7 +81,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         check.CommandText = "SELECT COUNT(*) FROM Tasks;";
         Assert.Equal(0L, await check.ExecuteScalarAsync());
         check.CommandText = "SELECT COUNT(*) FROM SchemaMigrations;";
-        Assert.Equal(3L, await check.ExecuteScalarAsync());
+        Assert.Equal(4L, await check.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -385,6 +385,11 @@ public sealed class TaskCoreTests : IAsyncLifetime
 
     private sealed class DelayedReadService(ITaskService inner) : ITaskService
     {
+        public Task<TaskGraph> GetGraphAsync(Guid profileId, CancellationToken cancellationToken = default) => inner.GetGraphAsync(profileId, cancellationToken);
+        public Task<TaskItem> CreateSubtaskAsync(TaskReference parent, string title, CancellationToken cancellationToken = default) => inner.CreateSubtaskAsync(parent, title, cancellationToken);
+        public Task SetParentAsync(TaskReference task, Guid? parentId, CancellationToken cancellationToken = default) => inner.SetParentAsync(task, parentId, cancellationToken);
+        public Task AddDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default) => inner.AddDependencyAsync(task, dependencyId, cancellationToken);
+        public Task RemoveDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default) => inner.RemoveDependencyAsync(task, dependencyId, cancellationToken);
         private int delayNext = 1;
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -430,6 +435,8 @@ public sealed class TaskCoreTests : IAsyncLifetime
 
     private sealed class DelayedRepository(ITaskRepository inner) : ITaskRepository
     {
+        public Task<TaskGraph> GetGraphAsync(WorkspaceContext workspace, CancellationToken cancellationToken) => inner.GetGraphAsync(workspace, cancellationToken);
+        public Task<T> TransactAsync<T>(WorkspaceContext workspace, Func<TaskGraph,T> change, CancellationToken cancellationToken) => inner.TransactAsync(workspace, change, cancellationToken);
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async Task CreateAsync(WorkspaceContext workspace, TaskItem task, CancellationToken cancellationToken)

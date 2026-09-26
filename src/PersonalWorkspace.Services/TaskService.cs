@@ -7,6 +7,81 @@ namespace PersonalWorkspace.Services;
 public sealed class TaskService(ITaskRepository repository, ICurrentProfile current, IWorkspaceOperationGate gate,
     TimeProvider time, ILogger<TaskService> logger) : ITaskService
 {
+    public Task<TaskGraph> GetGraphAsync(Guid profileId, CancellationToken cancellationToken = default) =>
+        RunAsync(profileId, workspace => repository.GetGraphAsync(workspace, cancellationToken), cancellationToken);
+
+    public Task<TaskItem> CreateSubtaskAsync(TaskReference parent, string title, CancellationToken cancellationToken = default) =>
+        GraphChangeAsync(parent.ProfileId, graph =>
+        {
+            RequireEditable(Find(graph, parent.ItemId));
+            var child = NewTask(Validate(new(title))) with { ParentTaskId = parent.ItemId };
+            graph.Tasks.Add(child.Item.Id, child);
+            Recalculate(graph);
+            return child;
+        }, cancellationToken);
+
+    public Task SetParentAsync(TaskReference task, Guid? parentId, CancellationToken cancellationToken = default) =>
+        GraphChangeAsync(task.ProfileId, graph =>
+        {
+            var existing = Find(graph, task.ItemId); RequireEditable(existing);
+            if (parentId is { } id) RequireEditable(Find(graph, id));
+            graph.Tasks[task.ItemId] = Stamp(existing, existing with { ParentTaskId = parentId });
+            Recalculate(graph);
+            return true;
+        }, cancellationToken);
+
+    public Task AddDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default) =>
+        GraphChangeAsync(task.ProfileId, graph =>
+        {
+            var existing = Find(graph, task.ItemId); RequireEditable(existing);
+            var blocker = Find(graph, dependencyId);
+            if (!graph.CanDependOn(task.ItemId, dependencyId))
+                throw new TaskValidationException("This dependency is already assigned or would create a completion cycle with this task or its subtasks.");
+            if (existing.Status == TaskStatus.Done && blocker.Status != TaskStatus.Done)
+                throw new TaskValidationException("Reopen this task before adding an incomplete dependency.");
+            graph.Dependencies.Add(new(task.ItemId, dependencyId, time.GetUtcNow()));
+            Recalculate(graph);
+            return true;
+        }, cancellationToken);
+
+    public Task RemoveDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default) =>
+        GraphChangeAsync(task.ProfileId, graph =>
+        {
+            RequireEditable(Find(graph, task.ItemId));
+            graph.Dependencies.RemoveAll(d => d.TaskId == task.ItemId && d.DependsOnTaskId == dependencyId);
+            Recalculate(graph);
+            return true;
+        }, cancellationToken);
+
+    private Task<T> GraphChangeAsync<T>(Guid profile, Func<TaskGraph, T> change, CancellationToken cancellationToken) =>
+        RunAsync(profile, workspace => repository.TransactAsync(workspace, change, cancellationToken), cancellationToken);
+
+    private static TaskItem Find(TaskGraph graph, Guid id) => graph.Tasks.GetValueOrDefault(id)
+        ?? throw new TaskValidationException("This task is not available in the active profile.");
+
+    private TaskItem Stamp(TaskItem old, TaskItem updated)
+    {
+        if (old == updated) return old;
+        var now = time.GetUtcNow();
+        if (now <= old.Item.UpdatedAtUtc) now = old.Item.UpdatedAtUtc.AddTicks(1);
+        return updated with { Item = updated.Item with { UpdatedAtUtc = now } };
+    }
+
+    private void Recalculate(TaskGraph graph)
+    {
+        var order = graph.CompletionOrder(); // Includes hierarchy AND dependency prerequisite edges.
+        var children = graph.Tasks.Values.Where(t => t.ParentTaskId.HasValue).ToLookup(t => t.ParentTaskId!.Value, t => t.Item.Id);
+        var prerequisites = graph.Prerequisites();
+        foreach (var id in order)
+        {
+            if (!children.Contains(id)) continue; // Never auto-complete a leaf dependent or sibling.
+            var task = graph.Tasks[id];
+            var complete = prerequisites[id].All(required => graph.Tasks[required].Status == TaskStatus.Done);
+            var status = complete ? TaskStatus.Done : task.Status == TaskStatus.Done ? TaskStatus.ToDo : task.Status;
+            graph.Tasks[id] = Stamp(task, task with { Status = status });
+        }
+    }
+
     public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(Guid profileId, DateOnly from, DateOnly through, CancellationToken cancellationToken = default) =>
         RunAsync(profileId, workspace => from <= through ? repository.GetScheduledAsync(workspace, from, through, cancellationToken)
             : throw new TaskValidationException("The end date cannot be before the start date."), cancellationToken);
@@ -74,21 +149,35 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         }, cancellationToken);
 
     public Task PermanentlyDeleteAsync(TaskReference reference, CancellationToken cancellationToken = default) =>
-        RunAsync(reference.ProfileId, async workspace =>
+        GraphChangeAsync(reference.ProfileId, graph =>
         {
-            await repository.PermanentlyDeleteAsync(workspace, reference.ItemId, cancellationToken);
+            var task = Find(graph, reference.ItemId);
+            if (task.Item.DeletedAtUtc is null) throw new TaskValidationException("Move the task to Trash before permanently deleting it.");
+            graph.Tasks.Remove(reference.ItemId);
+            foreach (var child in graph.Tasks.Values.Where(t => t.ParentTaskId == reference.ItemId).ToArray())
+                graph.Tasks[child.Item.Id] = Stamp(child, child with { ParentTaskId = null });
+            graph.Dependencies.RemoveAll(d => d.TaskId == reference.ItemId || d.DependsOnTaskId == reference.ItemId);
+            Recalculate(graph);
             return true;
         }, cancellationToken);
 
     private Task<TaskItem> MutateAsync(TaskReference reference, Func<TaskItem, TaskItem> mutation, CancellationToken cancellationToken) =>
-        RunAsync(reference.ProfileId, workspace => repository.UpdateAsync(workspace, reference.ItemId, task =>
+        GraphChangeAsync(reference.ProfileId, graph =>
         {
+            var task = Find(graph, reference.ItemId);
             var updated = mutation(task);
-            if (updated == task) return task;
-            var now = time.GetUtcNow();
-            if (now <= task.Item.UpdatedAtUtc) now = task.Item.UpdatedAtUtc.AddTicks(1);
-            return updated with { Item = updated.Item with { UpdatedAtUtc = now } };
-        }, cancellationToken), cancellationToken);
+            if (updated.Status == TaskStatus.Done && task.Status != TaskStatus.Done)
+            {
+                var incomplete = graph.Prerequisites()[task.Item.Id].Where(id => graph.Tasks[id].Status != TaskStatus.Done).ToArray();
+                if (incomplete.Length > 0)
+                    throw new TaskValidationException("Complete required subtasks and dependencies first: " + string.Join(", ", incomplete.Take(3).Select(id => graph.Tasks[id].Item.Title)) + ".");
+            }
+            if (updated.Status != TaskStatus.Done && task.Status == TaskStatus.Done && graph.Tasks.Values.Any(t => t.ParentTaskId == task.Item.Id))
+                throw new TaskValidationException("Reopen a completed subtask to reopen this parent task.");
+            graph.Tasks[task.Item.Id] = Stamp(task, updated);
+            Recalculate(graph);
+            return graph.Tasks[task.Item.Id];
+        }, cancellationToken);
 
     private TaskItem NewTask(TaskDraft draft)
     {

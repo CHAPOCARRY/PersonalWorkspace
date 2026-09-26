@@ -75,6 +75,18 @@ public static class WorkspaceMigrationCatalog
             );
             CREATE INDEX IX_Events_StartDate ON Events(StartDate);
             CREATE INDEX IX_Events_EndDate ON Events(EndDate);
+            """),
+        new(4, "Create subtasks and dependencies", """
+            ALTER TABLE Tasks ADD COLUMN ParentTaskId TEXT NULL REFERENCES Tasks(ItemId) ON DELETE SET NULL;
+            CREATE INDEX IX_Tasks_ParentTaskId ON Tasks(ParentTaskId) WHERE ParentTaskId IS NOT NULL;
+            CREATE TABLE TaskDependencies (
+                TaskId TEXT NOT NULL REFERENCES Tasks(ItemId) ON DELETE CASCADE,
+                DependsOnTaskId TEXT NOT NULL REFERENCES Tasks(ItemId) ON DELETE CASCADE,
+                CreatedAtUtc TEXT NOT NULL,
+                PRIMARY KEY(TaskId, DependsOnTaskId),
+                CHECK(TaskId <> DependsOnTaskId)
+            );
+            CREATE INDEX IX_TaskDependencies_DependsOnTaskId ON TaskDependencies(DependsOnTaskId, TaskId);
             """)
     ];
 }

@@ -30,7 +30,10 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Button Content="{Binding Title}" Click="OnOpen" Tag="{Binding}" Style="{StaticResource TaskTitleButtonStyle}" IsEnabled="{Binding CanEdit}" ToolTipService.ToolTip="{Binding Title}" />
+                            <StackPanel>
+                                <Button Content="{Binding HierarchyTitle}" Click="OnOpen" Tag="{Binding}" Style="{StaticResource TaskTitleButtonStyle}" IsEnabled="{Binding CanEdit}" ToolTipService.ToolTip="{Binding Title}" />
+                                <TextBlock Text="{Binding ContextText}" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" TextWrapping="Wrap" />
+                            </StackPanel>
                             <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource BodyStyle}" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="2" Text="{Binding PriorityText}" Style="{StaticResource BodyStyle}" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="3" Text="{Binding ScheduledText}" Style="{StaticResource BodyStyle}" VerticalAlignment="Center" />
@@ -71,6 +74,53 @@
                     <Button Content="Move to Trash" Click="OnTrash" Tag="{Binding Detail}" IsEnabled="{Binding CanSave}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
                 </StackPanel>
                 <TextBlock Text="Select Save to keep your changes." Style="{StaticResource BodyStyle}" />
+                <StackPanel Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space12}">
+                    <TextBlock Text="{Binding Detail.Context}" Style="{StaticResource BodyStyle}" TextWrapping="Wrap" />
+                    <Button Content="Open parent" Click="OnOpen" Tag="{Binding Parent}" IsEnabled="{Binding Parent.CanEdit}" HorizontalAlignment="Left" Visibility="{Binding HasParent, Converter={StaticResource BoolVisibility}}" />
+                    <TextBlock Text="Subtasks" FontSize="{StaticResource SectionTitle}" />
+                    <TextBlock Text="{Binding ProgressText}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="SubtaskProgress" />
+                    <TextBlock Text="Subtask and dependency actions save immediately." Style="{StaticResource BodyStyle}" />
+                    <ItemsControl ItemsSource="{Binding Subtasks}">
+                        <ItemsControl.ItemTemplate><DataTemplate>
+                            <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <Button Content="{Binding HierarchyTitle}" Click="OnOpen" Tag="{Binding}" IsEnabled="{Binding CanEdit}" Style="{StaticResource TaskTitleButtonStyle}" />
+                                    <TextBlock Text="{Binding ContextText}" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" />
+                                <Button Grid.Column="2" Content="{Binding CompletionLabel}" Click="OnToggleDone" Tag="{Binding}" IsEnabled="{Binding CanEdit}" />
+                            </Grid>
+                        </DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBox Header="Subtask title" Text="{Binding SubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="SubtaskTitle" />
+                    <Button Content="+ Add subtask" Command="{Binding AddSubtaskCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="Blocked by" FontSize="{StaticResource SectionTitle}" />
+                    <TextBlock Text="{Binding DependencyText}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="DependencySummary" />
+                    <ItemsControl ItemsSource="{Binding Dependencies}">
+                        <ItemsControl.ItemTemplate><DataTemplate>
+                            <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <Button Content="{Binding Title}" Click="OnOpen" Tag="{Binding}" IsEnabled="{Binding CanEdit}" Style="{StaticResource TaskTitleButtonStyle}" />
+                                    <TextBlock Text="{Binding ContextText}" FontSize="{StaticResource Small}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" />
+                                <Button Grid.Column="2" Content="Remove dependency" Click="OnRemoveDependency" Tag="{Binding}" />
+                            </Grid>
+                        </DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Expander Header="+ Add dependency" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="{StaticResource Space8}">
+                            <TextBox Header="Filter task titles" Text="{Binding DependencyFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="DependencyFilter" />
+                            <ListView ItemsSource="{Binding DependencyCandidates}" SelectionMode="None" MaxHeight="{StaticResource EventListHeight}">
+                                <ListView.ItemTemplate><DataTemplate>
+                                    <Button Content="{Binding Title}" Click="OnAddDependency" Tag="{Binding}" AutomationProperties.Name="{Binding Title}" />
+                                </DataTemplate></ListView.ItemTemplate>
+                            </ListView>
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
                 <StackPanel Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space12}">
                     <TextBlock Text="Organization" FontSize="{StaticResource SectionTitle}" />
                     <TextBlock Text="Assign or remove tags and spaces below. These changes save immediately." Style="{StaticResource BodyStyle}" />
