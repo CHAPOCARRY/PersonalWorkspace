@@ -53,6 +53,7 @@ public sealed class SqliteTaskRepository : ITaskRepository
             Bind(command, task);
             command.Parameters.AddWithValue("$parent", (object?)task.ParentTaskId?.ToString("D") ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
+            if (old?.Value != task.Value) await SaveValueAsync(connection, transaction, task, cancellationToken);
         }
         foreach (var removed in dependencies.Except(graph.Dependencies))
         {
@@ -104,8 +105,10 @@ public sealed class SqliteTaskRepository : ITaskRepository
 
     private const string SelectSql = """
         SELECT w.Id, w.ItemType, w.Title, w.CreatedAtUtc, w.UpdatedAtUtc, w.ArchivedAtUtc, w.DeletedAtUtc,
-               t.Description, t.Status, t.Priority, t.ScheduledDate, t.ParentTaskId
+               t.Description, t.Status, t.Priority, t.ScheduledDate, t.ParentTaskId,
+               v.ValueType, v.Target, v.Actual, v.TargetSeconds, v.ActualSeconds, v.CurrencyCode, v.Unit
         FROM WorkspaceItems w JOIN Tasks t ON t.ItemId = w.Id
+        LEFT JOIN TaskValues v ON v.ItemId = t.ItemId
         """;
 
     public async Task<IReadOnlyList<TaskItem>> GetAsync(WorkspaceContext workspace, TaskCollection collection, DateOnly today, CancellationToken cancellationToken)
@@ -153,6 +156,7 @@ public sealed class SqliteTaskRepository : ITaskRepository
         }
         Bind(command, task);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        if (task.Value is not null) await SaveValueAsync(connection, transaction, task, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -178,6 +182,7 @@ public sealed class SqliteTaskRepository : ITaskRepository
             Bind(command, task);
             command.Parameters.AddWithValue("$parent", (object?)task.ParentTaskId?.ToString("D") ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
+            if (existing.Value != task.Value) await SaveValueAsync(connection, transaction, task, cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
         return task;
@@ -216,7 +221,43 @@ public sealed class SqliteTaskRepository : ITaskRepository
             ReadUtc(reader, 3)!.Value, ReadUtc(reader, 4)!.Value, ReadUtc(reader, 5), ReadUtc(reader, 6)),
         reader.GetString(7), (TaskStatus)reader.GetInt32(8), (TaskPriority)reader.GetInt32(9),
         reader.IsDBNull(10) ? null : DateOnly.ParseExact(reader.GetString(10), "yyyy-MM-dd", CultureInfo.InvariantCulture),
-        reader.IsDBNull(11) ? null : Guid.Parse(reader.GetString(11)));
+        reader.IsDBNull(11) ? null : Guid.Parse(reader.GetString(11)), ReadValue(reader));
+
+    private static TaskValue? ReadValue(SqliteDataReader reader)
+    {
+        if (reader.IsDBNull(12)) return null;
+        var type = (TaskValueType)reader.GetInt32(12);
+        var duration = type == TaskValueType.Duration;
+        decimal Number(int index) => duration ? reader.GetInt64(index) : decimal.Parse(reader.GetString(index), NumberStyles.Float, CultureInfo.InvariantCulture);
+        var targetIndex = duration ? 15 : 13; var actualIndex = duration ? 16 : 14;
+        return new(type, Number(targetIndex), reader.IsDBNull(actualIndex) ? null : Number(actualIndex),
+            reader.IsDBNull(17) ? null : reader.GetString(17), reader.IsDBNull(18) ? null : reader.GetString(18));
+    }
+
+    private static async Task SaveValueAsync(SqliteConnection connection, SqliteTransaction transaction, TaskItem task, CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.Parameters.AddWithValue("$id", task.Item.Id.ToString("D"));
+        if (task.Value is not { } value) command.CommandText = "DELETE FROM TaskValues WHERE ItemId=$id;";
+        else
+        {
+            command.CommandText = """
+                INSERT INTO TaskValues (ItemId, ValueType, Target, Actual, TargetSeconds, ActualSeconds, CurrencyCode, Unit)
+                VALUES ($id,$type,$target,$actual,$seconds,$actualSeconds,$currency,$unit)
+                ON CONFLICT(ItemId) DO UPDATE SET ValueType=$type, Target=$target, Actual=$actual,
+                    TargetSeconds=$seconds, ActualSeconds=$actualSeconds, CurrencyCode=$currency, Unit=$unit;
+                """;
+            var duration = value.Type == TaskValueType.Duration;
+            command.Parameters.AddWithValue("$type", (int)value.Type);
+            command.Parameters.AddWithValue("$target", duration ? DBNull.Value : value.Target.ToString("G29", CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$actual", duration ? DBNull.Value : (object?)value.Actual?.ToString("G29", CultureInfo.InvariantCulture) ?? DBNull.Value);
+            command.Parameters.AddWithValue("$seconds", duration ? (long)value.Target : DBNull.Value);
+            command.Parameters.AddWithValue("$actualSeconds", duration && value.Actual is { } actual ? (long)actual : DBNull.Value);
+            command.Parameters.AddWithValue("$currency", (object?)value.CurrencyCode ?? DBNull.Value);
+            command.Parameters.AddWithValue("$unit", (object?)value.Unit ?? DBNull.Value);
+        }
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static DateTimeOffset? ReadUtc(SqliteDataReader reader, int index) => reader.IsDBNull(index) ? null
         : DateTimeOffset.Parse(reader.GetString(index), CultureInfo.InvariantCulture);

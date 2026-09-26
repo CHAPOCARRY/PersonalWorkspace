@@ -64,7 +64,7 @@ public sealed class SubtaskDependencyTests : IAsyncLifetime
         var oldEvent = new EventItem(new(Guid.NewGuid(), WorkspaceItemType.Event, "Holiday", now, now, null, null), true, new(2026,9,26), null, new(2026,9,28), null);
         await new SqliteEventRepository().CreateAsync(context, oldEvent, default);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(4L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(5L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(3L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(oldTask, await new SqliteTaskRepository().FindAsync(context, oldTask.Item.Id, default));
         Assert.Equal(oldEvent, await new SqliteEventRepository().FindAsync(context, oldEvent.Item.Id, default));

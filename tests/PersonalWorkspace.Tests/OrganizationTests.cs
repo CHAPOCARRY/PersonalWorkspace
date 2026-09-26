@@ -66,7 +66,7 @@ public sealed class OrganizationTests : IAsyncLifetime
         await initializer.InitializeAsync(legacyId, false);
         await initializer.InitializeAsync(legacyId, false);
         Assert.Equal(task, await repository.FindAsync(context, task.Item.Id, default));
-        Assert.Equal(4L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacyId));
+        Assert.Equal(5L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacyId));
         Assert.Equal("2026-09-01T00:00:00.0000000+00:00", await Scalar("SELECT AppliedAtUtc FROM SchemaMigrations WHERE Version=1;", legacyId));
         Assert.Equal(4L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('Tags','Spaces','ItemTags','ItemSpaces');", legacyId));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();

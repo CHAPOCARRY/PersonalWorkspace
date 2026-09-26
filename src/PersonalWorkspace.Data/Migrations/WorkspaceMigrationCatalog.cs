@@ -87,6 +87,26 @@ public static class WorkspaceMigrationCatalog
                 CHECK(TaskId <> DependsOnTaskId)
             );
             CREATE INDEX IX_TaskDependencies_DependsOnTaskId ON TaskDependencies(DependsOnTaskId, TaskId);
+            """),
+        new(5, "Create task values", """
+            CREATE TABLE TaskValues (
+                ItemId TEXT NOT NULL PRIMARY KEY REFERENCES Tasks(ItemId) ON DELETE CASCADE,
+                ValueType INTEGER NOT NULL CHECK(ValueType BETWEEN 1 AND 5),
+                Target TEXT NULL,
+                Actual TEXT NULL,
+                TargetSeconds INTEGER NULL,
+                ActualSeconds INTEGER NULL,
+                CurrencyCode TEXT NULL,
+                Unit TEXT NULL,
+                CHECK((ValueType = 4 AND Target IS NULL AND Actual IS NULL AND
+                    TargetSeconds IS NOT NULL AND typeof(TargetSeconds) = 'integer' AND TargetSeconds BETWEEN 1 AND 922337203685 AND
+                    (ActualSeconds IS NULL OR (typeof(ActualSeconds) = 'integer' AND ActualSeconds BETWEEN 0 AND 922337203685))) OR
+                    (ValueType <> 4 AND Target IS NOT NULL AND length(Target) > 0 AND TargetSeconds IS NULL AND ActualSeconds IS NULL)),
+                CHECK((ValueType = 3 AND CurrencyCode IS NOT NULL AND length(CurrencyCode) = 3 AND CurrencyCode GLOB '[A-Z][A-Z][A-Z]') OR
+                    (ValueType <> 3 AND CurrencyCode IS NULL)),
+                CHECK((ValueType = 5 AND Unit IS NOT NULL AND length(trim(Unit)) BETWEEN 1 AND 32) OR
+                    (ValueType <> 5 AND Unit IS NULL))
+            );
             """)
     ];
 }

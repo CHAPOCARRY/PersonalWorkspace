@@ -12,6 +12,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private readonly IOrganizationService organization;
     private OrganizationSnapshot catalog = OrganizationSnapshot.Empty;
     private TaskGraph graph = new([], []);
+    public TaskValueEditor ValueEditor { get; } = new();
     private IReadOnlyDictionary<Guid, TaskProgress> progress = new Dictionary<Guid, TaskProgress>();
     private string subtaskTitle = "", dependencyFilter = "";
     public string SubtaskTitle { get => subtaskTitle; set => SetProperty(ref subtaskTitle, value); }
@@ -87,8 +88,10 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     public IEnumerable<TaskRowViewModel> Rows => CanFilter
         ? rows.Where(row => row.Title.Contains(Filter.Trim(), StringComparison.CurrentCultureIgnoreCase)
             && catalog.Matches(row.Task.Item.Id, TagFilter?.Id, RouteSpaceId ?? SpaceFilter?.Id)) : rows;
-    public IReadOnlyList<OrganizationFilter> TagFilters { get; private set; } = [new(null, "All tags")];
-    public IReadOnlyList<OrganizationFilter> SpaceFilters { get; private set; } = [new(null, "All spaces")];
+    // WinUI probes IList.IndexOf with ComboBoxItem containers during selection changes.
+    // Arrays safely return -1 for those probes, including before any catalog is loaded.
+    public IReadOnlyList<OrganizationFilter> TagFilters { get; private set; } = new OrganizationFilter[] { new(null, "All tags") };
+    public IReadOnlyList<OrganizationFilter> SpaceFilters { get; private set; } = new OrganizationFilter[] { new(null, "All spaces") };
     public OrganizationFilter? TagFilter { get => tagFilter; set { if (SetProperty(ref tagFilter, value)) NotifyRows(); } }
     public OrganizationFilter? SpaceFilter { get => spaceFilter; set { if (SetProperty(ref spaceFilter, value)) NotifyRows(); } }
     public IReadOnlyList<OrganizationChoice> TagChoices { get; private set; } = [];
@@ -131,6 +134,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 EditorStatus = TaskStatus.ToDo;
                 EditorPriority = TaskPriority.None;
                 EditorScheduledDate = null;
+                ValueEditor.Load(null);
                 if (route.EntityId?.StartsWith("new:", StringComparison.Ordinal) == true)
                 {
                     if (!DateOnly.TryParseExact(route.EntityId[4..], "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var selected))
@@ -155,6 +159,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 EditorDescription = task.Description;
                 EditorStatus = task.Status;
                 EditorPriority = task.Priority;
+                ValueEditor.Load(task.Value);
                 EditorScheduledDate = task.ScheduledDate is { } date ? new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue)) : null;
             }
             else
@@ -211,6 +216,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         Detail = null;
         EditorTitle = EditorDescription = Filter = "";
         EditorScheduledDate = null;
+        ValueEditor.Load(null);
         Error = null;
         NotifyOrganization();
         NotifyView();
@@ -293,10 +299,21 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     {
         if (editorProfile is not { } profileId) throw new TaskValidationException("Reopen the task before saving.");
         var draft = new TaskDraft(EditorTitle, EditorDescription, EditorStatus, EditorPriority,
-            EditorScheduledDate is { } date ? DateOnly.FromDateTime(date.DateTime) : null);
+            EditorScheduledDate is { } date ? DateOnly.FromDateTime(date.DateTime) : null, ValueEditor.Build());
         var saved = editorReference is { } reference ? await service.UpdateAsync(reference, draft) : await service.CreateAsync(profileId, draft);
         if (current.Current?.Id == profileId) navigation.Navigate(new NavigationRoute("Task", saved.Item.Id.ToString("D")));
     });
+
+    [RelayCommand]
+    private Task RecordActualAsync() => MutateAsync(async () =>
+    {
+        if (editorReference is not { } reference || Detail?.Task.Value is not { } saved)
+            throw new TaskValidationException("Save the value type and target before recording an actual.");
+        var draft = ValueEditor.Build();
+        if (draft is null || (draft with { Actual = saved.Actual }) != saved)
+            throw new TaskValidationException("Select Save to keep your changed value definition before recording an actual.");
+        await service.RecordActualAsync(reference, ValueEditor.ParseActual());
+    }, preserveDraft: true);
 
     [RelayCommand]
     private Task ToggleDoneAsync(TaskRowViewModel row) => MutateAsync(async () =>
@@ -370,6 +387,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         var reference = editorReference;
         var before = Detail?.Task.Status;
         var draft = (EditorTitle, EditorDescription, EditorPriority, EditorScheduledDate, EditorStatus);
+        var valueDraft = (ValueEditor.Type, ValueEditor.Target, ValueEditor.Actual, ValueEditor.Currency, ValueEditor.Unit);
         busy = true;
         Error = null;
         NotifyView();
@@ -384,6 +402,8 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                     EditorTitle = draft.EditorTitle; EditorDescription = draft.EditorDescription;
                     EditorPriority = draft.EditorPriority; EditorScheduledDate = draft.EditorScheduledDate;
                     if (before == Detail?.Task.Status) EditorStatus = draft.EditorStatus;
+                    ValueEditor.Type = valueDraft.Type; ValueEditor.Target = valueDraft.Target; ValueEditor.Actual = valueDraft.Actual;
+                    ValueEditor.Currency = valueDraft.Currency; ValueEditor.Unit = valueDraft.Unit;
                 }
             }
         }
