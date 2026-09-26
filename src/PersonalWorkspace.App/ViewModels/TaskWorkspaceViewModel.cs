@@ -11,6 +11,26 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private readonly ITaskService service;
     private readonly IOrganizationService organization;
     private OrganizationSnapshot catalog = OrganizationSnapshot.Empty;
+    private TaskGraph graph = new([], []);
+    private IReadOnlyDictionary<Guid, TaskProgress> progress = new Dictionary<Guid, TaskProgress>();
+    private string subtaskTitle = "", dependencyFilter = "";
+    public string SubtaskTitle { get => subtaskTitle; set => SetProperty(ref subtaskTitle, value); }
+    public string DependencyFilter { get => dependencyFilter; set { if (SetProperty(ref dependencyFilter, value)) OnPropertyChanged(nameof(DependencyCandidates)); } }
+    public IReadOnlyList<TaskRowViewModel> Subtasks => editorReference is { } item ? TreeRows(item.ProfileId, item.ItemId) : [];
+    public IEnumerable<TaskRowViewModel> Dependencies => editorReference is { } item
+        ? graph.Dependencies.Where(d => d.TaskId == item.ItemId).Select(d => Row(item.ProfileId, graph.Tasks[d.DependsOnTaskId])) : [];
+    public IEnumerable<TaskRowViewModel> DependencyCandidates => editorReference is { } item
+        ? graph.Tasks.Values.Where(t => t.Item.Title.Contains(DependencyFilter.Trim(), StringComparison.CurrentCultureIgnoreCase)
+            && graph.CanDependOn(item.ItemId, t.Item.Id)
+            && (Detail?.Task.Status != TaskStatus.Done || t.Status == TaskStatus.Done))
+            .OrderBy(t => t.Item.Title, StringComparer.CurrentCultureIgnoreCase).Select(t => Row(item.ProfileId, t)) : [];
+    public string ProgressText => Detail?.ProgressText ?? "";
+    public string DependencyText => Dependencies.Count(row => row.Task.Status != TaskStatus.Done) switch
+    {
+        0 => "", 1 => "Blocked by 1 task", var count => $"Blocked by {count} tasks"
+    };
+    public TaskRowViewModel? Parent => Detail?.Task.ParentTaskId is { } id && graph.Tasks.TryGetValue(id, out var task) ? Row(Detail.ProfileId, task) : null;
+    public bool HasParent => Parent is not null;
     private OrganizationFilter? tagFilter, spaceFilter;
     private NavigationRoute returnRoute = new("Tasks");
     private readonly ICurrentProfile current;
@@ -42,7 +62,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         this.logger = logger;
         observedProfile = current.Current?.Id;
         current.Changed += (_, _) => OnProfileChanged();
-        navigation.Changed += (_, _) => { OnPropertyChanged(nameof(IsTaskArea)); _ = ReloadAsync(); };
+        navigation.Changed += (_, _) => { SubtaskTitle = DependencyFilter = ""; OnPropertyChanged(nameof(IsTaskArea)); _ = ReloadAsync(); };
     }
 
     public bool IsTaskArea => navigation.Current.Destination is "Tasks" or "Today" or "Archived" or "Trash" or "Task" or "Space";
@@ -125,9 +145,12 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 var task = await service.FindAsync(new TaskReference(profileId.Value, id));
                 if (request != revision) return;
                 if (task is null || task.Item.DeletedAtUtc is not null) throw new TaskValidationException("This task is no longer available here. Check Trash or browse tasks.");
+                var loadedGraph = await service.GetGraphAsync(profileId.Value);
+                if (request != revision) return;
+                graph = loadedGraph; progress = graph.Progress();
                 editorReference = new(profileId.Value, id);
                 editorProfile = profileId;
-                Detail = new(profileId.Value, task);
+                Detail = Row(profileId.Value, task);
                 EditorTitle = task.Item.Title;
                 EditorDescription = task.Description;
                 EditorStatus = task.Status;
@@ -145,7 +168,11 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 };
                 var tasks = await service.GetAsync(profileId.Value, collection);
                 if (request != revision) return;
-                rows = tasks.Select(task => new TaskRowViewModel(profileId.Value, task)).ToArray();
+                var loadedGraph = await service.GetGraphAsync(profileId.Value);
+                if (request != revision) return;
+                graph = loadedGraph; progress = graph.Progress();
+                var visible = tasks.Select(t => t.Item.Id).ToHashSet();
+                rows = TreeRows(profileId.Value, null, visible);
                 displayedToday = DateOnly.FromDateTime(DateTime.Now);
             }
         }
@@ -174,6 +201,8 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         observedProfile = current.Current?.Id;
         ++revision;
         rows = [];
+        graph = new([], []); progress = new Dictionary<Guid, TaskProgress>();
+        SubtaskTitle = DependencyFilter = "";
         catalog = OrganizationSnapshot.Empty;
         TagFilter = SpaceFilter = null;
         returnRoute = new("Tasks");
@@ -215,6 +244,51 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private void Unschedule() => EditorScheduledDate = null;
 
     [RelayCommand]
+    private Task AddSubtaskAsync() => MutateAsync(async () =>
+    {
+        if (editorReference is not { } parent) return;
+        await service.CreateSubtaskAsync(parent, SubtaskTitle);
+        SubtaskTitle = "";
+    }, preserveDraft: true);
+
+    [RelayCommand]
+    private Task AddDependencyAsync(TaskRowViewModel row) => MutateAsync(async () =>
+    {
+        if (editorReference is not { } task || task.ProfileId != row.ProfileId) return;
+        await service.AddDependencyAsync(task, row.Task.Item.Id);
+    }, preserveDraft: true);
+
+    [RelayCommand]
+    private Task RemoveDependencyAsync(TaskRowViewModel row) => MutateAsync(async () =>
+    {
+        if (editorReference is not { } task || task.ProfileId != row.ProfileId) return;
+        await service.RemoveDependencyAsync(task, row.Task.Item.Id);
+    }, preserveDraft: true);
+
+    private TaskRowViewModel Row(Guid profileId, TaskItem task, int depth = 0)
+    {
+        var context = task.ParentTaskId is { } parent && graph.Tasks.TryGetValue(parent, out var ancestor)
+            ? "Parent: " + ancestor.Item.Title + (ancestor.Item.DeletedAtUtc is not null ? " (in Trash)" : ancestor.Item.ArchivedAtUtc is not null ? " (archived)" : "") : "";
+        return new(profileId, task, context, progress.GetValueOrDefault(task.Item.Id), depth);
+    }
+
+    private IReadOnlyList<TaskRowViewModel> TreeRows(Guid profileId, Guid? root, HashSet<Guid>? visible = null)
+    {
+        var children = graph.Tasks.Values.Where(t => t.ParentTaskId.HasValue).ToLookup(t => t.ParentTaskId!.Value);
+        var starts = root is { } id ? children[id] : graph.Tasks.Values.Where(t => t.ParentTaskId is null);
+        var stack = new Stack<(TaskItem Task, int Depth)>();
+        foreach (var task in starts.OrderByDescending(t => t.Item.CreatedAtUtc).ThenBy(t => t.Item.Id).Reverse()) stack.Push((task, 0));
+        var result = new List<TaskRowViewModel>();
+        while (stack.TryPop(out var node))
+        {
+            if (visible is null || visible.Contains(node.Task.Item.Id)) result.Add(Row(profileId, node.Task, node.Depth));
+            var depth = visible is null || visible.Contains(node.Task.Item.Id) ? node.Depth + 1 : node.Depth;
+            foreach (var child in children[node.Task.Item.Id].OrderBy(t => t.Item.CreatedAtUtc).ThenBy(t => t.Item.Id).Reverse()) stack.Push((child, depth));
+        }
+        return result;
+    }
+
+    [RelayCommand]
     private Task SaveAsync() => MutateAsync(async () =>
     {
         if (editorProfile is not { } profileId) throw new TaskValidationException("Reopen the task before saving.");
@@ -226,7 +300,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
 
     [RelayCommand]
     private Task ToggleDoneAsync(TaskRowViewModel row) => MutateAsync(async () =>
-        await service.ChangeStatusAsync(row.Reference, row.Task.Status == TaskStatus.Done ? TaskStatus.ToDo : TaskStatus.Done));
+        await service.ChangeStatusAsync(row.Reference, row.Task.Status == TaskStatus.Done ? TaskStatus.ToDo : TaskStatus.Done), preserveDraft: true);
 
     [RelayCommand]
     private Task ArchiveAsync(TaskRowViewModel row) => ApplyAsync(row, TaskAction.Archive);
@@ -289,17 +363,29 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         OnPropertyChanged(nameof(TagChoices)); OnPropertyChanged(nameof(SpaceChoices));
     }
 
-    private async Task MutateAsync(Func<Task> operation)
+    private async Task MutateAsync(Func<Task> operation, bool preserveDraft = false)
     {
         if (!IsIdle) return;
         var profileId = current.Current?.Id;
+        var reference = editorReference;
+        var before = Detail?.Task.Status;
+        var draft = (EditorTitle, EditorDescription, EditorPriority, EditorScheduledDate, EditorStatus);
         busy = true;
         Error = null;
         NotifyView();
         try
         {
             await operation();
-            if (current.Current?.Id == profileId) await ReloadAsync();
+            if (current.Current?.Id == profileId)
+            {
+                await ReloadAsync();
+                if (preserveDraft && IsDetail && reference == editorReference)
+                {
+                    EditorTitle = draft.EditorTitle; EditorDescription = draft.EditorDescription;
+                    EditorPriority = draft.EditorPriority; EditorScheduledDate = draft.EditorScheduledDate;
+                    if (before == Detail?.Task.Status) EditorStatus = draft.EditorStatus;
+                }
+            }
         }
         catch (Exception exception) { if (current.Current?.Id == profileId) Report(exception); }
         finally { busy = false; NotifyView(); }
@@ -322,6 +408,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     {
         foreach (var property in new[] { nameof(IsIdle), nameof(IsBusy), nameof(CanSave), nameof(IsEditor), nameof(IsDetail), nameof(IsList),
             nameof(CanFilter), nameof(CanChooseSpaceFilter), nameof(IsToday), nameof(Heading), nameof(CreatedText), nameof(ModifiedText) }) OnPropertyChanged(property);
+        foreach (var property in new[] { nameof(Subtasks), nameof(Dependencies), nameof(DependencyCandidates), nameof(ProgressText), nameof(DependencyText), nameof(Parent), nameof(HasParent) }) OnPropertyChanged(property);
         NotifyRows();
     }
 }

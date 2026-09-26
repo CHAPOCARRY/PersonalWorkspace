@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles**, **Phase 2: Task Core**, **Phase 3: Tags and Spaces**, and **Phase 4: Calendar and Events** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
+The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles**, **Phase 2: Task Core**, **Phase 3: Tags and Spaces**, **Phase 4: Calendar and Events**, and **Phase 5: Subtasks and Task Dependencies** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
 
 ## Scope
 
@@ -328,3 +328,49 @@ Automated tests cover Phase 3 upgrades with original ledger entries and organiza
 Manual acceptance steps: create timed, all-day, and multi-day Events; inspect Month/Week/Day; navigate Previous/Next/Today and open a date; create a Task for that selected date; schedule an unscheduled Task; drag a Task and an Event to another date and verify their details; check today's Events; archive/trash/restore an Event and cancel/confirm permanent deletion; switch profiles and restart. Native UI smoke checks exercised Event creation and all three views, period navigation, unscheduled-task scheduling, real mouse drags of Tasks and Events, Library/Today consistency, lifecycle actions, profile switching, and restart persistence. The temporary profiles were removed through named confirmations and the original selection restored. Keyboard traversal, different display scaling settings, and touch input should also be checked interactively.
 
 Phase 4 intentionally has no recurrence rules, TaskOccurrence, carry-over, task times, reminders, notifications, resizing, or later item types. Event organization UI, timezone-aware instants, a proportional hourly timeline, and unscheduled-task paging are deferred. Week/Day are chronological agendas rather than hourly-positioned grids. Organization snapshots and existing Task Library behavior otherwise remain as documented in Phase 3. No Phase 5 functionality is included.
+
+## Phase 5: Subtasks and Task Dependencies
+
+### Task identity and migration
+
+A subtask is an ordinary `TaskItem` with nullable `ParentTaskId`. It retains its WorkspaceItem GUID, all normal Task properties and organization assignments. There is no separate subtask table or entity, inherited priority/date/organization, or duplicated Calendar record. Creation under a parent asks only for a title and uses ToDo, priority None, an empty description, and no scheduled date or assignments. Children can themselves have children without a domain depth limit.
+
+Workspace migration **4: Create subtasks and dependencies** adds `Tasks.ParentTaskId`, referencing `Tasks.ItemId` with `ON DELETE SET NULL`, and a partial parent index. It adds `TaskDependencies(TaskId, DependsOnTaskId, CreatedAtUtc)`, a composite primary key, a self-dependency CHECK, cascading foreign keys to both Tasks, and a reverse dependency index. All three shipped workspace migrations and both global migrations remain unchanged. Relationships exist only in each profile's workspace.db. Event schema and semantics are unchanged.
+
+### Progress, completion, and reopening
+
+`TaskGraph` is an operation-scoped batch of Tasks and dependency records. Leaf progress is derived in memory with explicit stacks, without recursive call-stack growth, N+1 reads, or persisted percentages. A structural parent contributes no additional unit: a branch with two leaves contributes two. Done is the only completed leaf state. Percentages round to the nearest integer, away from zero at the midpoint (2/3 = 67%). Only Tasks with children display progress.
+
+Archived and trashed descendants retain their relationships and remain required leaves. Hiding a Task never silently satisfies a completion requirement. Their detail rows explain their lifecycle state; a trashed child must be restored before editing. A parent cannot transition manually to Done while a required child or dependency remains incomplete. Error messages name up to three immediate blockers.
+
+After a Task or relationship mutation, parents are evaluated in prerequisite order. A parent becomes Done only when all immediate children and its explicit dependencies are Done; this guarantees all descendants have completed, including intermediate parents' dependencies. Completion propagates upward. A previously Done parent whose requirements become incomplete reopens to ToDo, including when an incomplete child is added. Other incomplete parent states remain intact. A completed parent is reopened by reopening a child, not by leaving all its children complete and manually choosing an incomplete status. Automatic persisted status changes advance UpdatedAtUtc monotonically; progress reads write nothing.
+
+Leaf Tasks retain explicit status control. Dependencies do not automatically complete or reopen leaf dependents. Reopening a blocker after a leaf dependent is already Done does not undo that historical completion; the guard applies to the next transition into Done. Adding an incomplete dependency to a Done Task requires reopening it first. Parents independently recalculate their own requirements when blockers change, so a parent can remain incomplete at 100% leaf progress while an explicit dependency is unfinished.
+
+### Dependency rules and graph integrity
+
+TaskId depends on DependsOnTaskId. Dependency blocking is derived and does not persist Status=Blocked: Doing and a dependency warning can coexist. Title, description, priority, scheduled date, organization and incomplete status changes remain available while blocked. Only completion is guarded. The picker filters titles within the current workspace and excludes self, existing assignments, and all cycle/deadlock candidates; the service repeats validation independently of the UI.
+
+For completion validation, a parent has prerequisite edges to its immediate children and a dependent Task has prerequisite edges to its blockers. A topological check rejects any cycle in this combined graph, on both dependency addition and reparenting. This rejects self-parenting, direct/deep hierarchy cycles, direct/deep dependency cycles, a child depending on any ancestor, and indirect mixed cycles through unrelated Tasks. A parent depending on its own descendant is allowed: that requirement is redundant but does not form a cycle. No general-purpose graph framework was introduced.
+
+### Transactions, lifecycle, and profile isolation
+
+TaskService owns integrity rules. SqliteTaskRepository reads the Task/relationship batch inside an immediate write transaction, invokes the domain mutation, and persists only differences before committing. Child status changes, ancestor status propagation, parent links and dependency changes therefore succeed or roll back together. No SQL executes in ViewModels. Ordinary independent Task creation and duplication retain their existing atomic insert path. Duplication makes an unassigned top-level copy and copies neither children nor dependencies.
+
+Archive and Trash affect only the selected Task. Children remain individually discoverable in Library, Today, Calendar and Space views whenever their own properties qualify. ParentTaskId survives archive, Trash and restore. Permanent deletion requires Trash and the existing named confirmation; immediate children become top-level, their descendants remain attached to them, and no surviving Task is deleted. The service detaches children and updates their timestamps in the same transaction; ON DELETE SET NULL also protects referential integrity at the database boundary. Dependency rows involving a permanently deleted Task cascade away, without deleting the other Task. Archived or trashed incomplete blockers continue blocking until completed after restoration, explicitly unlinked, or permanently deleted.
+
+All operations resolve the expected Profile ID under the existing shared workspace operation gate. Foreign parent/dependency IDs must exist as Tasks in that workspace. Profile switching waits for writes. Presentation clears graph, hierarchy, dependency candidates, progress, filters and drafts on profile change; revision checks discard delayed reads. There is no cross-profile relationship cache.
+
+### Presentation and existing views
+
+Task Detail adds indented nested subtasks, leaf progress, add/open/complete/reopen controls, parent navigation, a separate Blocked by section, dependency opening/removal, and a title-filtered add picker. Relationship actions save immediately and preserve unsaved Task fields; parent status changes refresh the displayed persisted status. Normal Task edits retain explicit Save. Native controls and existing design tokens are reused.
+
+Library rows are ordered as a hierarchy with indentation and immediate-parent context, plus subtle progress. Filters still return matching children independently; their context remains visible when a parent is filtered out, archived or in Trash. Indentation is visually capped at 16 levels to keep deep rows usable; the model, parent context and detail navigation are not depth-limited. Today and Space views reuse the same rows and Task mutations. Calendar continues querying only its visible scheduled range, without artificial dates or Event changes; a Task mutation may load the relationship batch to recalculate ancestors.
+
+### Verification and limitations
+
+Automated tests cover the populated Phase 4 upgrade and idempotency, unchanged migration hashes, creation/defaults/independent assignments, nested leaf counts and rounding, thousands of hierarchy levels, parent completion and reopening with timestamps, manual guards, self/direct/deep/mixed cycles, safe reparenting, lifecycle discovery and restoration, surviving children on permanent deletion, dependency guards and lifecycle, foreign-key behavior, rollback, duplication, profile isolation, Calendar/Today scheduling and presentation filtering/draft preservation. All earlier Profile, Task, organization, Calendar and Event tests remain part of the suite.
+
+Native acceptance: create Prepare trip with Buy flights, Reserve hotel (Check Booking and Check Airbnb), and Pack bags; check 0/4, 2/4 (50%), hotel completion and final trip completion; reopen Check Booking and verify both ancestors reopen; attempt premature parent completion. Create Review document and Publish document, assign the dependency, verify the guard, complete Review and then explicitly complete Publish. Schedule a child through Calendar and complete it from Today; give parent and child different Spaces; archive/trash/restore the parent, cancel then confirm permanent deletion and verify surviving children. Switch profiles and restart to verify isolation and persistence. Cycle rejection is also covered directly in service tests because invalid candidates are intentionally absent from the picker.
+
+Phase 5 keeps hierarchy rows expanded; there is no collapse state, hierarchy drag/reorder, or reparenting UI (the service supports validated reparenting). Large Task workspaces still use batched in-memory hierarchy/relationship snapshots rather than paging. There is no separate completion history or bulk descendant lifecycle action. Alternate DPI, touch and full keyboard traversal require additional interactive verification. No numerical Task kinds, recurrence, carry-over, templates, boards, notifications or Phase 6 features were added.

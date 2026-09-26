@@ -9,7 +9,7 @@ public enum TaskAction { Archive, RestoreArchive, Trash, RestoreTrash }
 public sealed record WorkspaceItem(Guid Id, WorkspaceItemType ItemType, string Title,
     DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, DateTimeOffset? ArchivedAtUtc, DateTimeOffset? DeletedAtUtc);
 
-public sealed record TaskItem(WorkspaceItem Item, string Description, TaskStatus Status, TaskPriority Priority, DateOnly? ScheduledDate);
+public sealed record TaskItem(WorkspaceItem Item, string Description, TaskStatus Status, TaskPriority Priority, DateOnly? ScheduledDate, Guid? ParentTaskId = null);
 public sealed record TaskDraft(string Title, string Description = "", TaskStatus Status = TaskStatus.ToDo,
     TaskPriority Priority = TaskPriority.None, DateOnly? ScheduledDate = null);
 // UI actions carry their originating profile so a stale editor can never write to a different workspace.
@@ -23,6 +23,8 @@ public interface IWorkspaceOperationGate
 
 public interface ITaskRepository
 {
+    Task<TaskGraph> GetGraphAsync(WorkspaceContext workspace, CancellationToken cancellationToken);
+    Task<T> TransactAsync<T>(WorkspaceContext workspace, Func<TaskGraph, T> change, CancellationToken cancellationToken);
     Task<IReadOnlyList<TaskItem>> GetScheduledAsync(WorkspaceContext workspace, DateOnly from, DateOnly through, CancellationToken cancellationToken);
     Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(WorkspaceContext workspace, CancellationToken cancellationToken);
     Task<IReadOnlyList<TaskItem>> GetAsync(WorkspaceContext workspace, TaskCollection collection, DateOnly today, CancellationToken cancellationToken);
@@ -34,6 +36,11 @@ public interface ITaskRepository
 
 public interface ITaskService
 {
+    Task<TaskGraph> GetGraphAsync(Guid profileId, CancellationToken cancellationToken = default);
+    Task<TaskItem> CreateSubtaskAsync(TaskReference parent, string title, CancellationToken cancellationToken = default);
+    Task SetParentAsync(TaskReference task, Guid? parentId, CancellationToken cancellationToken = default);
+    Task AddDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default);
+    Task RemoveDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TaskItem>> GetScheduledAsync(Guid profileId, DateOnly from, DateOnly through, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(Guid profileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TaskItem>> GetAsync(Guid profileId, TaskCollection collection, CancellationToken cancellationToken = default);
