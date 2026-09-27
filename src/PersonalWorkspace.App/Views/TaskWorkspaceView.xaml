@@ -1,6 +1,7 @@
 <UserControl x:Class="PersonalWorkspace.App.Views.TaskWorkspaceView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:PersonalWorkspace.App.Views">
     <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space16}">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid ColumnSpacing="{StaticResource Space16}">
@@ -41,11 +42,11 @@
                                 <Button.Flyout>
                                     <MenuFlyout>
                                         <MenuFlyoutItem Text="Open" Click="OnOpen" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
-                                        <MenuFlyoutItem Text="{Binding CompletionLabel}" Click="OnToggleDone" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
-                                        <MenuFlyoutItem Text="Duplicate" Click="OnDuplicate" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="{Binding CompletionLabel}" Click="OnToggleDone" Tag="{Binding}" Visibility="{Binding CanComplete, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Duplicate" Click="OnDuplicate" Tag="{Binding}" Visibility="{Binding CanChangeLifecycle, Converter={StaticResource BoolVisibility}}" />
                                         <MenuFlyoutItem Text="Archive" Click="OnArchive" Tag="{Binding}" Visibility="{Binding CanArchive, Converter={StaticResource BoolVisibility}}" />
                                         <MenuFlyoutItem Text="Restore" Click="OnRestore" Tag="{Binding}" Visibility="{Binding CanRestore, Converter={StaticResource BoolVisibility}}" />
-                                        <MenuFlyoutItem Text="Move to Trash" Click="OnTrash" Tag="{Binding}" Visibility="{Binding CanEdit, Converter={StaticResource BoolVisibility}}" />
+                                        <MenuFlyoutItem Text="Move to Trash" Click="OnTrash" Tag="{Binding}" Visibility="{Binding CanChangeLifecycle, Converter={StaticResource BoolVisibility}}" />
                                         <MenuFlyoutItem Text="Permanently delete" Click="OnPermanentDelete" Tag="{Binding}" Visibility="{Binding IsDeleted, Converter={StaticResource BoolVisibility}}" />
                                     </MenuFlyout>
                                 </Button.Flyout>
@@ -55,33 +56,33 @@
                 </ListView.ItemTemplate>
             </ListView>
         </Grid>
-        <ScrollViewer Grid.Row="3" Visibility="{Binding IsEditor, Converter={StaticResource BoolVisibility}}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+        <ScrollViewer Grid.Row="3" Visibility="{Binding IsDefinitionEditor, Converter={StaticResource BoolVisibility}}" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
             <StackPanel Spacing="{StaticResource Space24}" MaxWidth="{StaticResource TaskDetailWidth}" HorizontalAlignment="Stretch">
                 <Button Content="Back" Command="{Binding BackCommand}" HorizontalAlignment="Left" />
                 <TextBox Header="Title" Text="{Binding EditorTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskTitle" />
                 <StackPanel Spacing="{StaticResource Space12}">
-                    <ComboBox Header="Task type" ItemsSource="{Binding ValueEditor.Types}" SelectedItem="{Binding ValueEditor.Type, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskValueType" />
+                    <ComboBox Header="Task type" ItemsSource="{Binding ValueEditor.Types}" SelectedItem="{Binding ValueEditor.Type, Mode=TwoWay}" IsEnabled="{Binding CanEditValueDefinition}" AutomationProperties.AutomationId="TaskValueType" />
                     <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding ValueEditor.HasValue, Converter={StaticResource BoolVisibility}}">
                         <TextBlock Text="Value / Progress" FontSize="{StaticResource SectionTitle}" />
                         <TextBlock Text="{Binding ValueEditor.Hint}" Style="{StaticResource BodyStyle}" />
                         <Grid ColumnSpacing="{StaticResource Space16}">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <TextBox Header="Target" Text="{Binding ValueEditor.Target, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskTarget" />
-                            <TextBox Grid.Column="1" Header="Actual (optional)" Text="{Binding ValueEditor.Actual, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskActual" />
+                            <TextBox Header="Target" Text="{Binding ValueEditor.Target, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditValueDefinition}" AutomationProperties.AutomationId="TaskTarget" />
+                            <TextBox Grid.Column="1" Header="Actual (optional)" Text="{Binding ValueEditor.Actual, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsOneOffDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskActual" />
                         </Grid>
-                        <TextBox Header="Currency code" Text="{Binding ValueEditor.Currency, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding ValueEditor.IsCurrency, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskCurrency" />
-                        <TextBox Header="Unit label" Text="{Binding ValueEditor.Unit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" Visibility="{Binding ValueEditor.IsCustom, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskUnit" />
+                        <TextBox Header="Currency code" Text="{Binding ValueEditor.Currency, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditValueDefinition}" Visibility="{Binding ValueEditor.IsCurrency, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskCurrency" />
+                        <TextBox Header="Unit label" Text="{Binding ValueEditor.Unit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditValueDefinition}" Visibility="{Binding ValueEditor.IsCustom, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskUnit" />
                         <TextBlock Text="{Binding ValueEditor.Progress}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="TaskValueProgress" />
                         <ProgressBar Minimum="0" Maximum="100" Value="{Binding ValueEditor.VisualProgress}" AutomationProperties.Name="Value progress" />
-                        <Button Content="Record actual" Command="{Binding RecordActualCommand}" IsEnabled="{Binding CanSave}" HorizontalAlignment="Left" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RecordActual" />
-                        <TextBlock Text="Record actual saves only the current result. Use Save below for type, target and other task changes." Style="{StaticResource BodyStyle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" />
+                        <Button Content="Record actual" Command="{Binding RecordActualCommand}" IsEnabled="{Binding CanSave}" HorizontalAlignment="Left" Visibility="{Binding IsOneOffDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RecordActual" />
+                        <TextBlock Text="Record actual saves only the current result. Use Save below for type, target and other task changes." Style="{StaticResource BodyStyle}" Visibility="{Binding IsOneOffDetail, Converter={StaticResource BoolVisibility}}" />
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space16}">
-                    <ComboBox Header="Status" ItemsSource="{Binding Statuses}" SelectedItem="{Binding EditorStatus, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskStatus" />
+                    <ComboBox Header="Status" ItemsSource="{Binding Statuses}" SelectedItem="{Binding EditorStatus, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsOneOffDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskStatus" />
                     <ComboBox Header="Priority" ItemsSource="{Binding Priorities}" SelectedItem="{Binding EditorPriority, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskPriority" />
-                    <CalendarDatePicker x:Name="ScheduledDatePicker" Header="Scheduled date (optional)" PlaceholderText="Unscheduled" DateChanged="OnScheduledDateChanged" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="TaskScheduledDate" />
-                    <Button Content="Clear date" Command="{Binding UnscheduleCommand}" VerticalAlignment="Bottom" IsEnabled="{Binding IsIdle}" />
+                    <CalendarDatePicker IsEnabled="{Binding CanEditDefinitionExecution}" x:Name="ScheduledDatePicker" Header="Scheduled date (optional)" PlaceholderText="Unscheduled" DateChanged="OnScheduledDateChanged" AutomationProperties.AutomationId="TaskScheduledDate" />
+                    <Button Content="Clear date" Command="{Binding UnscheduleCommand}" VerticalAlignment="Bottom" IsEnabled="{Binding CanEditDefinitionExecution}" />
                 </StackPanel>
                 <TextBox Header="Description" Text="{Binding EditorDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="{StaticResource TaskDescriptionHeight}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TaskDescription" />
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
@@ -107,7 +108,7 @@
                                     <TextBlock Text="{Binding ContextText}" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" />
-                                <Button Grid.Column="2" Content="{Binding CompletionLabel}" Click="OnToggleDone" Tag="{Binding}" IsEnabled="{Binding CanEdit}" />
+                                <Button Grid.Column="2" Content="{Binding CompletionLabel}" Click="OnToggleDone" Tag="{Binding}" IsEnabled="{Binding CanComplete}" />
                             </Grid>
                         </DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -168,12 +169,72 @@
                     </Expander>
                     <Button Content="Manage tags and spaces" Command="{Binding ManageOrganizationCommand}" />
                 </StackPanel>
+                <StackPanel Visibility="{Binding ShowRecurrence, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space12}">
+                    <TextBlock Text="Recurrence" FontSize="{StaticResource SectionTitle}" />
+                    <TextBlock Text="{Binding SeriesSummary}" Style="{StaticResource BodyStyle}" />
+                    <TextBlock Text="{Binding SeriesNotice}" Style="{StaticResource BodyStyle}" />
+                    <TextBlock Text="Value type, target and units are preserved once occurrences exist. Duplicate the task for a different value definition." Style="{StaticResource BodyStyle}" />
+                    <Expander Header="Recurrence settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsEnabled="{Binding IsIdle}">
+                        <StackPanel Spacing="{StaticResource Space12}">
+                            <views:RecurrenceEditorView DataContext="{Binding RecurrenceEditor}" />
+                            <TextBlock Text="Entire series changes the remaining schedule; past dates and edited occurrences are preserved. Open an occurrence for This and future." Style="{StaticResource BodyStyle}" />
+                            <Button Content="Save recurrence · Entire series" Command="{Binding SaveRecurrenceCommand}" AutomationProperties.AutomationId="SaveRecurrence" />
+                            <Button Content="Remove recurrence" Command="{Binding RemoveRecurrenceCommand}" Visibility="{Binding IsSeries, Converter={StaticResource BoolVisibility}}" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander Header="Occurrences and history" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsEnabled="{Binding IsIdle}">
+                        <StackPanel Spacing="{StaticResource Space12}">
+                            <TextBlock Text="Browse a date window of up to 366 days, using your Windows date format. Skipped occurrences can be opened and restored." Style="{StaticResource BodyStyle}" />
+                            <TextBox Header="From" Text="{Binding HistoryFrom, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="HistoryFrom" />
+                            <TextBox Header="Through" Text="{Binding HistoryThrough, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="HistoryThrough" />
+                            <Button Content="Load occurrences" Command="{Binding LoadOccurrencesCommand}" />
+                            <ItemsControl ItemsSource="{Binding OccurrenceRows}">
+                                <ItemsControl.ItemTemplate><DataTemplate>
+                                    <StackPanel Spacing="{StaticResource Space8}">
+                                        <Button Content="{Binding Label}" Tag="{Binding}" Click="OnOpenOccurrence" />
+                                        <TextBlock Text="{Binding ValueText}" Style="{StaticResource BodyStyle}" />
+                                    </StackPanel>
+                                </DataTemplate></ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
                 <StackPanel Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" Spacing="{StaticResource Space8}">
                     <TextBlock Text="Created" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" />
                     <TextBlock Text="{Binding CreatedText}" Style="{StaticResource BodyStyle}" />
                     <TextBlock Text="Last modified" FontSize="{StaticResource Small}" Foreground="{ThemeResource TextSecondary}" />
                     <TextBlock Text="{Binding ModifiedText}" Style="{StaticResource BodyStyle}" />
                 </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+        <ScrollViewer Grid.Row="3" Visibility="{Binding IsOccurrence, Converter={StaticResource BoolVisibility}}" HorizontalScrollBarVisibility="Disabled" IsEnabled="{Binding IsIdle}">
+            <StackPanel MaxWidth="{StaticResource TaskDetailWidth}" Spacing="{StaticResource Space16}" HorizontalAlignment="Stretch">
+                <Button Content="Open task definition / series" Command="{Binding OpenSeriesCommand}" HorizontalAlignment="Left" />
+                <TextBlock Text="{Binding OccurrenceTitle}" FontSize="{StaticResource SectionTitle}" />
+                <TextBlock Text="{Binding OccurrenceContext}" Style="{StaticResource BodyStyle}" />
+                <TextBlock Text="{Binding SeriesSummary}" Style="{StaticResource BodyStyle}" />
+                <TextBlock Text="This occurrence · Changes below affect only this execution. A moved occurrence may share a date with another slot." Style="{StaticResource BodyStyle}" />
+                <TextBox Header="Occurrence date (Windows date format)" Text="{Binding OccurrenceDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="OccurrenceDate" />
+                <ComboBox Header="Status" ItemsSource="{Binding Statuses}" SelectedItem="{Binding OccurrenceStatus, Mode=TwoWay}" AutomationProperties.AutomationId="OccurrenceStatus" />
+                <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding OccurrenceValue.HasValue, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="Base target" Style="{StaticResource BodyStyle}" />
+                    <TextBlock Text="{Binding OccurrenceValue.Target}" Style="{StaticResource BodyStyle}" />
+                    <TextBlock Text="{Binding OccurrenceValue.Hint}" Style="{StaticResource BodyStyle}" />
+                    <TextBox Header="Actual (optional)" Text="{Binding OccurrenceValue.Actual, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="OccurrenceActual" />
+                    <TextBlock Text="{Binding OccurrenceValue.Progress}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="OccurrenceProgress" />
+                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding OccurrenceValue.VisualProgress}" />
+                </StackPanel>
+                <CheckBox Content="Skip this occurrence" IsChecked="{Binding OccurrenceSkipped, Mode=TwoWay}" />
+                <Button Content="Save this occurrence" Command="{Binding SaveOccurrenceCommand}" AutomationProperties.AutomationId="SaveOccurrence" />
+                <TextBlock Text="Completion requires the definition's required subtasks and dependencies to be Done. Recurring prerequisites have no date-to-date mapping in this phase." Style="{StaticResource BodyStyle}" />
+                <Expander Header="Edit series recurrence" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="{StaticResource Space12}">
+                        <CheckBox Content="This and future (from this original slot)" IsChecked="{Binding FutureScope, Mode=TwoWay}" />
+                        <TextBlock Text="Unchecked: Entire series. Past and edited executions stay intact. This and future requires today or a future slot; leave Start at that slot's date." Style="{StaticResource BodyStyle}" />
+                        <views:RecurrenceEditorView DataContext="{Binding RecurrenceEditor}" />
+                        <Button Content="Save series recurrence" Command="{Binding SaveRecurrenceCommand}" AutomationProperties.AutomationId="SaveOccurrenceRecurrence" />
+                    </StackPanel>
+                </Expander>
             </StackPanel>
         </ScrollViewer>
     </Grid>

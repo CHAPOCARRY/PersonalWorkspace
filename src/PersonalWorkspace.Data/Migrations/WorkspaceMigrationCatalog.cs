@@ -107,6 +107,47 @@ public static class WorkspaceMigrationCatalog
                 CHECK((ValueType = 5 AND Unit IS NOT NULL AND length(trim(Unit)) BETWEEN 1 AND 32) OR
                     (ValueType <> 5 AND Unit IS NULL))
             );
+            """),
+        new(6, "Create task recurrence and occurrences", """
+            CREATE TABLE TaskRecurrenceRules (
+                Id TEXT NOT NULL PRIMARY KEY,
+                TaskId TEXT NOT NULL REFERENCES Tasks(ItemId) ON DELETE CASCADE,
+                Pattern INTEGER NOT NULL CHECK(Pattern BETWEEN 0 AND 3),
+                StartDate TEXT NOT NULL,
+                Interval INTEGER NOT NULL CHECK(Interval BETWEEN 1 AND 999),
+                Weekdays INTEGER NOT NULL,
+                MonthDay INTEGER NOT NULL,
+                Ordinal INTEGER NOT NULL,
+                Weekday INTEGER NOT NULL,
+                EndDate TEXT NULL CHECK(EndDate IS NULL OR EndDate >= StartDate),
+                FromDate TEXT NOT NULL,
+                UntilDate TEXT NULL CHECK(UntilDate IS NULL OR UntilDate >= FromDate),
+                Enabled INTEGER NOT NULL CHECK(Enabled IN (0,1)),
+                CreatedAtUtc TEXT NOT NULL,
+                UNIQUE(Id, TaskId),
+                CHECK(Pattern <> 1 OR Weekdays BETWEEN 1 AND 127),
+                CHECK(Pattern <> 2 OR MonthDay BETWEEN 1 AND 31),
+                CHECK(Pattern <> 3 OR (Ordinal IN (-1,1,2,3,4,5) AND Weekday BETWEEN 0 AND 6))
+            );
+            CREATE INDEX IX_TaskRecurrenceRules_Task ON TaskRecurrenceRules(TaskId, Enabled, FromDate, UntilDate);
+            CREATE TABLE TaskOccurrences (
+                Id TEXT NOT NULL PRIMARY KEY,
+                TaskId TEXT NOT NULL REFERENCES Tasks(ItemId) ON DELETE CASCADE,
+                SegmentId TEXT NOT NULL,
+                SlotDate TEXT NOT NULL,
+                OccurrenceDate TEXT NOT NULL,
+                Status INTEGER NOT NULL CHECK(Status BETWEEN 0 AND 3),
+                Actual TEXT NULL,
+                IsSkipped INTEGER NOT NULL CHECK(IsSkipped IN (0,1)),
+                IsOverride INTEGER NOT NULL CHECK(IsOverride IN (0,1)),
+                IsSuppressed INTEGER NOT NULL CHECK(IsSuppressed IN (0,1)),
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL,
+                UNIQUE(TaskId, SlotDate),
+                FOREIGN KEY(SegmentId, TaskId) REFERENCES TaskRecurrenceRules(Id, TaskId) ON DELETE CASCADE
+            );
+            CREATE INDEX IX_TaskOccurrences_Date ON TaskOccurrences(OccurrenceDate, TaskId);
+            CREATE INDEX IX_TaskOccurrences_Slot ON TaskOccurrences(SlotDate, TaskId);
             """)
     ];
 }

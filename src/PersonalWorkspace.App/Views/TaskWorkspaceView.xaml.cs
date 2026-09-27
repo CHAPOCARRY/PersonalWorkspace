@@ -51,6 +51,10 @@ public sealed partial class TaskWorkspaceView : UserControl
     {
         if (sender is FrameworkElement { Tag: TaskRowViewModel row }) command.Execute(row);
     }
+    private void OnOpenOccurrence(object sender, RoutedEventArgs args)
+    {
+        if(sender is FrameworkElement { Tag: OccurrenceRow row }) ViewModel.OpenOccurrenceCommand.Execute(row);
+    }
     private void OnOpen(object sender, RoutedEventArgs args) => Execute(sender, ViewModel.OpenCommand);
     private void OnToggleDone(object sender, RoutedEventArgs args) => Execute(sender, ViewModel.ToggleDoneCommand);
     private void OnDuplicate(object sender, RoutedEventArgs args) => Execute(sender, ViewModel.DuplicateCommand);

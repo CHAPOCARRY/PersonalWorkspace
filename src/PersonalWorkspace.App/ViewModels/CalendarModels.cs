@@ -5,9 +5,9 @@ using TaskStatus = PersonalWorkspace.Core.TaskStatus;
 namespace PersonalWorkspace.App.ViewModels;
 
 public enum CalendarMode { Month, Week, Day }
-public sealed record CalendarEntry(Guid ProfileId, DateOnly DisplayDate, TaskItem? Task, EventItem? Event, DateTime LocalNow)
+public sealed record CalendarEntry(Guid ProfileId, DateOnly DisplayDate, TaskItem? Task, EventItem? Event, DateTime LocalNow, TaskOccurrence? Occurrence = null)
 {
-    public Guid Id => Task?.Item.Id ?? Event!.Item.Id;
+    public Guid Id => Occurrence?.Id ?? Task?.Item.Id ?? Event!.Item.Id;
     public WorkspaceItemReference Reference => new(ProfileId, Id);
     public string Title => Task?.Item.Title ?? Event!.Item.Title;
     public bool IsTask => Task is not null;
@@ -18,7 +18,7 @@ public sealed record CalendarEntry(Guid ProfileId, DateOnly DisplayDate, TaskIte
     public bool CanRestore => Event is { Item.ArchivedAtUtc: not null } || IsDeleted;
     public string TimeLabel => Event is not { } item ? "Task"
         : item.AllDay ? "All day" : (item.StartDate < DisplayDate ? "Continues" : item.StartTime!.Value.ToString("t", CultureInfo.CurrentCulture));
-    public string Label => Task is { } task ? (task.Status == TaskStatus.Done ? "✓ Task · " : "□ Task · ") + Title : TimeLabel + " · " + Title;
+    public string Label => Task is { } task ? ((Occurrence?.Status ?? task.Status) == TaskStatus.Done ? "✓ Task · " : "□ Task · ") + Title + (Occurrence is not null ? " · Repeats" : "") : TimeLabel + " · " + Title;
     public override string ToString() => Label;
     public string DragLabel => "Drag " + (IsTask ? "task " : "event ") + Title;
     public string EventSummary => Event is { } item ?
