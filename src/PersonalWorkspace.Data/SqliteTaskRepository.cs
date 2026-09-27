@@ -5,7 +5,7 @@ using TaskStatus = PersonalWorkspace.Core.TaskStatus;
 
 namespace PersonalWorkspace.Data;
 
-public sealed class SqliteTaskRepository : ITaskRepository
+public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceRepository
 {
     public async Task<TaskGraph> GetGraphAsync(WorkspaceContext workspace, CancellationToken cancellationToken)
     {
@@ -36,10 +36,18 @@ public sealed class SqliteTaskRepository : ITaskRepository
         var graph = await ReadGraphAsync(connection, transaction, cancellationToken);
         var original = graph.Tasks.ToDictionary(); var dependencies = graph.Dependencies.ToArray();
         var result = change(graph);
+        await PersistGraphAsync(connection, transaction, graph, original, dependencies, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    private static async Task PersistGraphAsync(SqliteConnection connection, SqliteTransaction transaction, TaskGraph graph,
+        Dictionary<Guid, TaskItem> original, TaskDependency[] dependencies, CancellationToken cancellationToken)
+    {
         // Persist only differences. Parent propagation and relation changes commit together.
         foreach (var task in graph.Tasks.Values)
         {
-            if (original.TryGetValue(task.Item.Id, out var old) && old == task) continue;
+            if (original.TryGetValue(task.Item.Id, out var old) && old == (task with { IsRecurring = old.IsRecurring, HasOccurrences = old.HasOccurrences })) continue;
             using var command = connection.CreateCommand(); command.Transaction = transaction;
             command.CommandText = old is null ? """
                 INSERT INTO WorkspaceItems (Id, ItemType, Title, CreatedAtUtc, UpdatedAtUtc, ArchivedAtUtc, DeletedAtUtc)
@@ -76,8 +84,6 @@ public sealed class SqliteTaskRepository : ITaskRepository
             command.CommandText = "DELETE FROM WorkspaceItems WHERE Id=$id AND ItemType=1;";
             command.Parameters.AddWithValue("$id", id.ToString("D")); await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
-        return result;
     }
 
     public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(WorkspaceContext workspace, DateOnly from, DateOnly through, CancellationToken cancellationToken) =>
@@ -89,7 +95,7 @@ public sealed class SqliteTaskRepository : ITaskRepository
     {
         await using var connection = await OpenAsync(workspace, cancellationToken);
         using var command = connection.CreateCommand();
-        command.CommandText = SelectSql + " WHERE w.ItemType = 1 AND w.ArchivedAtUtc IS NULL AND w.DeletedAtUtc IS NULL AND " +
+        command.CommandText = SelectSql + " WHERE w.ItemType = 1 AND w.ArchivedAtUtc IS NULL AND w.DeletedAtUtc IS NULL AND NOT EXISTS(SELECT 1 FROM TaskRecurrenceRules r WHERE r.TaskId=t.ItemId AND r.Enabled=1) AND " +
             (from is null ? "t.ScheduledDate IS NULL ORDER BY w.CreatedAtUtc DESC, w.Id LIMIT 100;"
                 : "t.ScheduledDate >= $from AND t.ScheduledDate <= $through ORDER BY t.ScheduledDate, w.CreatedAtUtc, w.Id;");
         if (from is { } start)
@@ -106,7 +112,9 @@ public sealed class SqliteTaskRepository : ITaskRepository
     private const string SelectSql = """
         SELECT w.Id, w.ItemType, w.Title, w.CreatedAtUtc, w.UpdatedAtUtc, w.ArchivedAtUtc, w.DeletedAtUtc,
                t.Description, t.Status, t.Priority, t.ScheduledDate, t.ParentTaskId,
-               v.ValueType, v.Target, v.Actual, v.TargetSeconds, v.ActualSeconds, v.CurrencyCode, v.Unit
+               v.ValueType, v.Target, v.Actual, v.TargetSeconds, v.ActualSeconds, v.CurrencyCode, v.Unit,
+               EXISTS(SELECT 1 FROM TaskRecurrenceRules r WHERE r.TaskId=t.ItemId AND r.Enabled=1),
+               EXISTS(SELECT 1 FROM TaskOccurrences o WHERE o.TaskId=t.ItemId)
         FROM WorkspaceItems w JOIN Tasks t ON t.ItemId = w.Id
         LEFT JOIN TaskValues v ON v.ItemId = t.ItemId
         """;
@@ -118,7 +126,7 @@ public sealed class SqliteTaskRepository : ITaskRepository
         var predicate = collection switch
         {
             TaskCollection.Active => "w.DeletedAtUtc IS NULL AND w.ArchivedAtUtc IS NULL",
-            TaskCollection.Today => "w.DeletedAtUtc IS NULL AND w.ArchivedAtUtc IS NULL AND t.ScheduledDate = $today",
+            TaskCollection.Today => "w.DeletedAtUtc IS NULL AND w.ArchivedAtUtc IS NULL AND t.ScheduledDate = $today AND NOT EXISTS(SELECT 1 FROM TaskRecurrenceRules r WHERE r.TaskId=t.ItemId AND r.Enabled=1)",
             TaskCollection.Archived => "w.DeletedAtUtc IS NULL AND w.ArchivedAtUtc IS NOT NULL",
             TaskCollection.Trash => "w.DeletedAtUtc IS NOT NULL",
             _ => throw new ArgumentOutOfRangeException(nameof(collection))
@@ -221,7 +229,7 @@ public sealed class SqliteTaskRepository : ITaskRepository
             ReadUtc(reader, 3)!.Value, ReadUtc(reader, 4)!.Value, ReadUtc(reader, 5), ReadUtc(reader, 6)),
         reader.GetString(7), (TaskStatus)reader.GetInt32(8), (TaskPriority)reader.GetInt32(9),
         reader.IsDBNull(10) ? null : DateOnly.ParseExact(reader.GetString(10), "yyyy-MM-dd", CultureInfo.InvariantCulture),
-        reader.IsDBNull(11) ? null : Guid.Parse(reader.GetString(11)), ReadValue(reader));
+        reader.IsDBNull(11) ? null : Guid.Parse(reader.GetString(11)), ReadValue(reader), reader.GetBoolean(19), reader.GetBoolean(20));
 
     private static TaskValue? ReadValue(SqliteDataReader reader)
     {

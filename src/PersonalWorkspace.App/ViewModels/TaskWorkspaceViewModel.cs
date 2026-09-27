@@ -52,11 +52,14 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     private TaskStatus status;
     private TaskPriority priority;
     private DateTimeOffset? scheduledDate;
-    private DateOnly displayedToday = DateOnly.FromDateTime(DateTime.Now);
+    private readonly TimeProvider clock;
+    private DateOnly displayedToday;
 
-    public TaskWorkspaceViewModel(ITaskService service, ICurrentProfile current, INavigationService navigation, ILogger<TaskWorkspaceViewModel> logger, IOrganizationService organization)
+    public TaskWorkspaceViewModel(ITaskService service, ICurrentProfile current, INavigationService navigation, ILogger<TaskWorkspaceViewModel> logger, IOrganizationService organization, IRecurrenceService? recurrence = null, TimeProvider? clock = null)
     {
         this.service = service;
+        this.recurrence = recurrence;
+        this.clock = clock ?? TimeProvider.System;
         this.organization = organization;
         this.current = current;
         this.navigation = navigation;
@@ -66,8 +69,8 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         navigation.Changed += (_, _) => { SubtaskTitle = DependencyFilter = ""; OnPropertyChanged(nameof(IsTaskArea)); _ = ReloadAsync(); };
     }
 
-    public bool IsTaskArea => navigation.Current.Destination is "Tasks" or "Today" or "Archived" or "Trash" or "Task" or "Space";
-    public bool IsEditor => navigation.Current.Destination == "Task" || navigation.Current.Destination == "Tasks" &&
+    public bool IsTaskArea => navigation.Current.Destination is "Tasks" or "Today" or "Archived" or "Trash" or "Task" or "Space" or "Occurrence";
+    public bool IsEditor => IsOccurrence || navigation.Current.Destination == "Task" || navigation.Current.Destination == "Tasks" &&
         (navigation.Current.EntityId == "new" || navigation.Current.EntityId?.StartsWith("new:", StringComparison.Ordinal) == true);
     public bool IsDetail => navigation.Current.Destination == "Task";
     public bool IsList => !IsEditor;
@@ -79,7 +82,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     public bool CanChooseSpaceFilter => navigation.Current.Destination == "Tasks" && !IsEditor;
     private Guid? RouteSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
     public bool IsToday => navigation.Current.Destination == "Today";
-    public string Heading => IsEditor ? (IsDetail ? "Task detail" : "New task") : navigation.Current.Destination == "Space"
+    public string Heading => IsOccurrence ? "Task occurrence" : IsEditor ? (IsDetail ? "Task detail" : "New task") : navigation.Current.Destination == "Space"
         ? "Space — " + (catalog.Spaces.FirstOrDefault(space => space.Id == RouteSpaceId)?.Name ?? "Unavailable") : navigation.Current.Destination;
     public string EmptyMessage => IsToday ? "No tasks scheduled for today." : CanFilter && (filter.Length > 0 || TagFilter?.Id is not null || SpaceFilter?.Id is not null)
         ? "No tasks match your filters." : "No tasks here yet.";
@@ -124,11 +127,16 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
             catalog = loadedCatalog;
             if (route.Destination == "Space" && !catalog.Spaces.Any(space => space.Id == RouteSpaceId && space.ArchivedAtUtc is null))
                 throw new OrganizationValidationException("This space is unavailable or archived. Manage spaces to restore it.");
-            if (route.Destination == "Tasks" && IsEditor)
+            if (route.Destination == "Occurrence")
+            {
+                await LoadOccurrenceAsync(profileId.Value,route.EntityId,request);
+            }
+            else if (route.Destination == "Tasks" && IsEditor)
             {
                 editorProfile = profileId;
                 editorReference = null;
                 Detail = null;
+                ClearRecurrence();
                 EditorTitle = "";
                 EditorDescription = "";
                 EditorStatus = TaskStatus.ToDo;
@@ -152,6 +160,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 var loadedGraph = await service.GetGraphAsync(profileId.Value);
                 if (request != revision) return;
                 graph = loadedGraph; progress = graph.Progress();
+                if(editorReference?.ItemId != id) HistoryFrom=HistoryThrough="";
                 editorReference = new(profileId.Value, id);
                 editorProfile = profileId;
                 Detail = Row(profileId.Value, task);
@@ -161,6 +170,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 EditorPriority = task.Priority;
                 ValueEditor.Load(task.Value);
                 EditorScheduledDate = task.ScheduledDate is { } date ? new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue)) : null;
+                await LoadRecurrenceAsync(editorReference,request);
             }
             else
             {
@@ -178,7 +188,13 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 graph = loadedGraph; progress = graph.Progress();
                 var visible = tasks.Select(t => t.Item.Id).ToHashSet();
                 rows = TreeRows(profileId.Value, null, visible);
-                displayedToday = DateOnly.FromDateTime(DateTime.Now);
+                displayedToday = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+                if(collection==TaskCollection.Today && recurrence is not null)
+                {
+                    var occurrences=await recurrence.GetRangeAsync(profileId.Value,displayedToday,displayedToday);
+                    if(request!=revision)return;
+                    rows=rows.Concat(occurrences.Select(item=>new TaskRowViewModel(profileId.Value,item.Definition,Occurrence:item.Occurrence))).ToArray();
+                }
             }
         }
         catch (Exception exception)
@@ -189,6 +205,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
                 editorReference = null;
                 editorProfile = null;
                 Detail = null;
+                ClearRecurrence();
                 Report(exception);
             }
         }
@@ -198,7 +215,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         }
     }
 
-    public Task RefreshTodayIfNeededAsync() => IsToday && displayedToday != DateOnly.FromDateTime(DateTime.Now) ? ReloadAsync() : Task.CompletedTask;
+    public Task RefreshTodayIfNeededAsync() => IsToday && displayedToday != DateOnly.FromDateTime(clock.GetLocalNow().DateTime) ? ReloadAsync() : Task.CompletedTask;
 
     private void OnProfileChanged()
     {
@@ -217,6 +234,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
         EditorTitle = EditorDescription = Filter = "";
         EditorScheduledDate = null;
         ValueEditor.Load(null);
+        ClearRecurrence();
         Error = null;
         NotifyOrganization();
         NotifyView();
@@ -243,7 +261,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
     {
         if (!IsIdle || row.ProfileId != current.Current?.Id) return;
         returnRoute = navigation.Current.Destination is "Today" or "Archived" or "Space" ? navigation.Current : new("Tasks");
-        navigation.Navigate(new NavigationRoute("Task", row.Task.Item.Id.ToString("D")));
+        navigation.Navigate(new NavigationRoute(row.Occurrence is null ? "Task" : "Occurrence", (row.Occurrence?.Id ?? row.Task.Item.Id).ToString("D")));
     }
 
     [RelayCommand]
@@ -317,7 +335,12 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
 
     [RelayCommand]
     private Task ToggleDoneAsync(TaskRowViewModel row) => MutateAsync(async () =>
-        await service.ChangeStatusAsync(row.Reference, row.Task.Status == TaskStatus.Done ? TaskStatus.ToDo : TaskStatus.Done), preserveDraft: true);
+    {
+        if(row.Occurrence is { } occurrence && recurrence is not null)
+            await recurrence.UpdateAsync(new(row.ProfileId,occurrence.Id),occurrence.OccurrenceDate,
+                occurrence.Status==TaskStatus.Done?TaskStatus.ToDo:TaskStatus.Done,occurrence.Actual,occurrence.IsSkipped);
+        else await service.ChangeStatusAsync(row.Reference,row.Task.Status==TaskStatus.Done?TaskStatus.ToDo:TaskStatus.Done);
+    }, preserveDraft: true);
 
     [RelayCommand]
     private Task ArchiveAsync(TaskRowViewModel row) => ApplyAsync(row, TaskAction.Archive);
@@ -426,6 +449,7 @@ public sealed partial class TaskWorkspaceViewModel : ObservableObject
 
     private void NotifyView()
     {
+        NotifyRecurrence();
         foreach (var property in new[] { nameof(IsIdle), nameof(IsBusy), nameof(CanSave), nameof(IsEditor), nameof(IsDetail), nameof(IsList),
             nameof(CanFilter), nameof(CanChooseSpaceFilter), nameof(IsToday), nameof(Heading), nameof(CreatedText), nameof(ModifiedText) }) OnPropertyChanged(property);
         foreach (var property in new[] { nameof(Subtasks), nameof(Dependencies), nameof(DependencyCandidates), nameof(ProgressText), nameof(DependencyText), nameof(Parent), nameof(HasParent) }) OnPropertyChanged(property);

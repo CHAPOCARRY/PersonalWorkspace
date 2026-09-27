@@ -10,6 +10,7 @@ public sealed partial class CalendarViewModel : ObservableObject
 {
     private readonly IEventService events;
     private readonly ITaskService tasks;
+    private readonly IRecurrenceService? recurrence;
     private readonly ICurrentProfile current;
     private readonly INavigationService navigation;
     private readonly TimeProvider clock;
@@ -29,9 +30,10 @@ public sealed partial class CalendarViewModel : ObservableObject
     private EventItem? detail;
     private NavigationRoute returnRoute = new("Calendar");
 
-    public CalendarViewModel(IEventService events, ITaskService tasks, ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<CalendarViewModel> logger)
+    public CalendarViewModel(IEventService events, ITaskService tasks, ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<CalendarViewModel> logger, IRecurrenceService? recurrence = null)
     {
         this.events = events; this.tasks = tasks; this.current = current; this.navigation = navigation; this.clock = clock; this.logger = logger;
+        this.recurrence = recurrence;
         selectedDate = Today;
         observedProfile = current.Current?.Id;
         navigation.Changed += (_, _) => { Notify(); _ = ReloadAsync(); };
@@ -95,11 +97,14 @@ public sealed partial class CalendarViewModel : ObservableObject
                 if (request != revision) return;
                 var unscheduled = await tasks.GetUnscheduledAsync(profile.Value);
                 if (request != revision) return;
+                var occurrences = recurrence is null ? Array.Empty<OccurrenceItem>() : await recurrence.GetRangeAsync(profile.Value,range.From,range.Through);
+                if(request!=revision)return;
                 var now = LocalNow;
                 Days = Enumerable.Range(range.From.DayNumber, range.Through.DayNumber - range.From.DayNumber + 1).Select(number =>
                 {
                     var date = DateOnly.FromDayNumber(number);
                     var entries = scheduled.Where(task => task.ScheduledDate == date).Select(task => new CalendarEntry(profile.Value, date, task, null, now))
+                        .Concat(occurrences.Where(item=>item.Occurrence.OccurrenceDate==date).Select(item=>new CalendarEntry(profile.Value,date,item.Definition,null,now,item.Occurrence)))
                         .Concat(calendarEvents.Where(item => item.OccursOn(date)).Select(item => Entry(profile.Value, item, date))).ToArray();
                     return new CalendarDay(date, date == Today, date.Month == selectedDate.Month, entries);
                 }).ToArray();
@@ -170,7 +175,7 @@ public sealed partial class CalendarViewModel : ObservableObject
     {
         if (!IsIdle || entry.ProfileId != current.Current?.Id || !entry.CanOpen) return;
         returnRoute = navigation.Current;
-        navigation.Navigate(new(entry.IsTask ? "Task" : "Event", entry.Id.ToString("D")));
+        navigation.Navigate(new(entry.Occurrence is not null ? "Occurrence" : entry.IsTask ? "Task" : "Event", entry.Id.ToString("D")));
     }
     [RelayCommand] private void Back() => navigation.Navigate(returnRoute);
     [RelayCommand] private Task SaveAsync() => MutateAsync(async () =>
@@ -184,7 +189,8 @@ public sealed partial class CalendarViewModel : ObservableObject
     [RelayCommand] private Task ScheduleAsync(CalendarEntry entry) => MoveAsync(entry, selectedDate);
     public Task MoveAsync(CalendarEntry entry, DateOnly target) => MutateAsync(async () =>
     {
-        if (entry.IsTask) await tasks.ScheduleAsync(new(entry.ProfileId, entry.Id), target);
+        if(entry.Occurrence is not null && recurrence is not null) await recurrence.MoveAsync(new(entry.ProfileId,entry.Id),target);
+        else if (entry.IsTask) await tasks.ScheduleAsync(new(entry.ProfileId, entry.Id), target);
         else
         {
             DateOnly start;

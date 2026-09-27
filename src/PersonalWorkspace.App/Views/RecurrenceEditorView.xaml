@@ -1,0 +1,25 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.RecurrenceEditorView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="{StaticResource Space12}">
+        <ComboBox Header="Repeats" ItemsSource="{Binding Patterns}" SelectedIndex="{Binding PatternIndex, Mode=TwoWay}" AutomationProperties.AutomationId="RecurrencePattern" />
+        <TextBox Header="Every (days, weeks or months)" Text="{Binding Interval, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RecurrenceInterval" />
+        <TextBlock Text="Enter dates using your Windows date format. Start is required; leave End empty for no end." Style="{StaticResource BodyStyle}" />
+        <TextBox Header="Start date" Text="{Binding Start, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RecurrenceStart" />
+        <TextBox Header="End date (optional, inclusive)" Text="{Binding End, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RecurrenceEnd" />
+        <StackPanel Visibility="{Binding IsWeekly, Converter={StaticResource BoolVisibility}}">
+            <CheckBox Content="Monday" IsChecked="{Binding Monday, Mode=TwoWay}" />
+            <CheckBox Content="Tuesday" IsChecked="{Binding Tuesday, Mode=TwoWay}" />
+            <CheckBox Content="Wednesday" IsChecked="{Binding Wednesday, Mode=TwoWay}" />
+            <CheckBox Content="Thursday" IsChecked="{Binding Thursday, Mode=TwoWay}" />
+            <CheckBox Content="Friday" IsChecked="{Binding Friday, Mode=TwoWay}" />
+            <CheckBox Content="Saturday" IsChecked="{Binding Saturday, Mode=TwoWay}" />
+            <CheckBox Content="Sunday" IsChecked="{Binding Sunday, Mode=TwoWay}" />
+        </StackPanel>
+        <TextBox Header="Day of month (missing days are skipped)" Text="{Binding MonthDay, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding IsMonthlyDay, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RecurrenceMonthDay" />
+        <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}" Visibility="{Binding IsMonthlyWeekday, Converter={StaticResource BoolVisibility}}">
+            <ComboBox Header="Which" ItemsSource="{Binding Ordinals}" SelectedIndex="{Binding OrdinalIndex, Mode=TwoWay}" AutomationProperties.AutomationId="RecurrenceOrdinal" />
+            <ComboBox Header="Weekday" ItemsSource="{Binding WeekdayOptions}" SelectedItem="{Binding Weekday, Mode=TwoWay}" AutomationProperties.AutomationId="RecurrenceWeekday" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

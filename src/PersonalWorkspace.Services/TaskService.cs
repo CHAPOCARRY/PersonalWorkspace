@@ -11,6 +11,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         MutateAsync(task, existing =>
         {
             RequireEditable(existing);
+            RequireOneOff(existing);
             var value = existing.Value ?? throw new TaskValidationException("Choose a value type and save its target before recording an actual.");
             return existing with { Value = (value with { Actual = actual }).Validate() };
         }, cancellationToken, evaluateValue: true);
@@ -75,7 +76,9 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         return updated with { Item = updated.Item with { UpdatedAtUtc = now } };
     }
 
-    private void Recalculate(TaskGraph graph, Guid? valueTask = null)
+    private void Recalculate(TaskGraph graph, Guid? valueTask = null) => RecalculateGraph(graph, time, valueTask);
+
+    internal static void RecalculateGraph(TaskGraph graph, TimeProvider clock, Guid? valueTask = null)
     {
         var order = graph.CompletionOrder(); // Includes hierarchy AND dependency prerequisite edges.
         var children = graph.Tasks.Values.Where(t => t.ParentTaskId.HasValue).ToLookup(t => t.ParentTaskId!.Value, t => t.Item.Id);
@@ -84,9 +87,10 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         {
             if (!children.Contains(id) && id != valueTask) continue; // A blocker change alone never completes a leaf dependent.
             var task = graph.Tasks[id];
+            if (task.IsRecurring) continue;
             var complete = (task.Value?.IsReached ?? true) && prerequisites[id].All(required => graph.Tasks[required].Status == TaskStatus.Done);
             var status = complete ? TaskStatus.Done : task.Status == TaskStatus.Done ? TaskStatus.ToDo : task.Status;
-            graph.Tasks[id] = Stamp(task, task with { Status = status });
+            if (task.Status != status) graph.Tasks[id] = task with { Status = status, Item = task.Item with { UpdatedAtUtc = clock.GetUtcNow() > task.Item.UpdatedAtUtc ? clock.GetUtcNow() : task.Item.UpdatedAtUtc.AddTicks(1) } };
         }
     }
 
@@ -120,6 +124,10 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         {
             RequireEditable(task);
             var valid = Validate(draft);
+            if (task.IsRecurring && (valid.Status != TaskStatus.ToDo || valid.ScheduledDate is not null || valid.Value?.Actual is not null))
+                throw new TaskValidationException("Edit status, date and Actual on an occurrence. The recurring definition remains ToDo and unscheduled.");
+            if (task.HasOccurrences && (task.Value is { } oldValue ? oldValue with { Actual = null } : null) != (valid.Value is { } newValue ? newValue with { Actual = null } : null))
+                throw new TaskValidationException("This task has occurrence history. Duplicate it to use a different value type, target, unit or currency without changing historical results.");
             return task with { Item = task.Item with { Title = valid.Title }, Description = valid.Description,
                 Status = valid.Status, Priority = valid.Priority, ScheduledDate = valid.ScheduledDate, Value = valid.Value };
         }, cancellationToken, evaluateValue: true);
@@ -128,6 +136,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         MutateAsync(reference, task =>
         {
             RequireEditable(task);
+            RequireOneOff(task);
             if (!Enum.IsDefined(status)) throw new TaskValidationException("Select a valid task status.");
             if (task.Status == TaskStatus.Done && status != TaskStatus.Done && task.Value?.IsReached == true)
                 throw new TaskValidationException("Lower or clear Actual to reopen this value-based task.");
@@ -135,7 +144,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         }, cancellationToken);
 
     public Task<TaskItem> ScheduleAsync(TaskReference reference, DateOnly? date, CancellationToken cancellationToken = default) =>
-        MutateAsync(reference, task => { RequireEditable(task); return task with { ScheduledDate = date }; }, cancellationToken);
+        MutateAsync(reference, task => { RequireEditable(task); RequireOneOff(task); return task with { ScheduledDate = date }; }, cancellationToken);
 
     public Task<TaskItem> ApplyAsync(TaskReference reference, TaskAction action, CancellationToken cancellationToken = default) =>
         MutateAsync(reference, task =>
@@ -211,6 +220,11 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         if (!Enum.IsDefined(draft.Status)) throw new TaskValidationException("Select a valid task status.");
         if (!Enum.IsDefined(draft.Priority)) throw new TaskValidationException("Select a valid priority.");
         return draft with { Title = draft.Title.Trim(), Description = draft.Description ?? "", Value = draft.Value?.Validate() };
+    }
+
+    private static void RequireOneOff(TaskItem task)
+    {
+        if (task.IsRecurring) throw new TaskValidationException("Open an occurrence to change its date, status or Actual.");
     }
 
     private static void RequireEditable(TaskItem task)

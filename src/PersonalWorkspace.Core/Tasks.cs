@@ -9,7 +9,7 @@ public enum TaskAction { Archive, RestoreArchive, Trash, RestoreTrash }
 public sealed record WorkspaceItem(Guid Id, WorkspaceItemType ItemType, string Title,
     DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, DateTimeOffset? ArchivedAtUtc, DateTimeOffset? DeletedAtUtc);
 
-public sealed record TaskItem(WorkspaceItem Item, string Description, TaskStatus Status, TaskPriority Priority, DateOnly? ScheduledDate, Guid? ParentTaskId = null, TaskValue? Value = null)
+public sealed record TaskItem(WorkspaceItem Item, string Description, TaskStatus Status, TaskPriority Priority, DateOnly? ScheduledDate, Guid? ParentTaskId = null, TaskValue? Value = null, bool IsRecurring = false, bool HasOccurrences = false)
 {
     public TaskValueType ValueType => Value?.Type ?? TaskValueType.Checkbox;
 }

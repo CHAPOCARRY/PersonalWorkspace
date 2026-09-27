@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. **Phase 1: Local Profiles**, **Phase 2: Task Core**, **Phase 3: Tags and Spaces**, **Phase 4: Calendar and Events**, and **Phase 5: Subtasks and Task Dependencies** extend it and supersede historical statements about empty workspaces, placeholders, and multiple application instances.
+The foundation sections below record the approved Phase 0 design. Phases 1–7 below extend it and supersede historical statements about empty workspaces, placeholders, multiple application instances, numerical Tasks and recurrence. Carry-over remains outside Phase 7.
 
 ## Scope
 
@@ -422,3 +422,71 @@ Native Windows UI Automation acceptance exercised Number 20 with Actual 18, 20, 
 Phase 6 stores a single result, with .NET decimal precision/range and whole-second durations. Extremely disparate values whose calculated percentage exceeds decimal range are rejected with a validation message. Currency validation checks code syntax rather than maintaining an ISO registry. There is no value-entry history, conversion, aggregate unit calculation or inline Today value editor. Alternate DPI, touch and full keyboard traversal still need additional interactive verification.
 
 **Recurrence, TaskOccurrence and carry-over remain deferred.** Future occurrence-specific effective targets and actuals can live separately from the base Task definition. Phase 6 creates no hidden occurrences, recurrence rules, surplus/deficit propagation, retroactive recalculation, Tracker history or Phase 7 functionality.
+
+## Phase 7: Task Recurrence and Task Occurrences
+
+### Definition and execution
+
+A recurring series has one existing `TaskItem` definition and many `TaskOccurrence` rows. Title, description, priority, organization, hierarchy, dependencies and optional base value Target remain on the definition. No Task is duplicated when a date is materialized. Non-recurring Tasks retain the Phase 6 model, including their own ScheduledDate, Status and Actual; migration creates no occurrence backfill.
+
+For an enabled series, the definition has Status ToDo, ScheduledDate null and definition Actual null. Its lifecycle still comes from WorkspaceItem archive/deletion timestamps. The definition never becomes Done because an occurrence completes, and definition-level status/date/Actual writes are rejected. Each occurrence instead owns its local date, ToDo/Doing/Blocked/Done status and optional Actual. Enabling recurrence requires an explicit StartDate; an existing Done Task must be reopened and a one-off Actual explicitly cleared first. Enabling replaces the previous one-off schedule. Duplicate creates an ordinary unfinished Task with the same value configuration, without recurrence or execution history.
+
+`TaskItem.IsRecurring` and `HasOccurrences` are derived by indexed existence queries, not stored Task columns. The latter includes retained suppressed rows. Once any occurrence exists, changes to value type, Target, unit and currency are rejected and those controls are disabled. This conservative Phase 7 restriction prevents old Actual values from being reinterpreted or historical progress from changing without versioned targets. Create a separate definition for a different value configuration; titles and other ordinary metadata remain editable.
+
+### Rules and local dates
+
+`RecurrenceRule` is a structured domain record, stored as normalized fields rather than opaque display text. It contains Pattern, mandatory StartDate, Interval (1–999), selected weekday bits, monthly day or ordinal/weekday, and optional inclusive EndDate. A null EndDate means no end. Start is a lower bound, not a forced occurrence: M/W/F starting Tuesday first yields Wednesday.
+
+Daily intervals count calendar days from StartDate. Weekly intervals use the Monday of the week containing StartDate as their anchor, with Sunday represented by bit zero in the weekday mask. Every two weeks on Monday/Thursday therefore keeps a fixed alternate-week pattern, even if the first partial week starts Tuesday. Monthly intervals count months from StartDate's month. Missing days, including day 31 in short months and February 29 in non-leap years, are skipped. Ordinal weekdays support first through fifth and last; an absent fifth weekday is skipped rather than moved. There is no yearly pattern or occurrence-count end condition.
+
+StartDate, segment boundaries, SlotDate and OccurrenceDate are `DateOnly`, persisted as invariant `yyyy-MM-dd` text. OccurrenceDate determines Calendar and Today placement. Today and reconciliation protection use the current Windows local date through TimeProvider; neither uses UTC day boundaries. Editor dates and numbers follow current Windows culture. Only technical CreatedAtUtc/UpdatedAtUtc timestamps are UTC.
+
+### Identity, migration and transactions
+
+Workspace migration **6: Create task recurrence and occurrences** adds `TaskRecurrenceRules` and `TaskOccurrences`. Existing workspace migrations 1–5 and global migrations are unchanged. The upgrade preserves all prior Task/value/relationship data and adds no rows until recurrence is explicitly enabled or materialized.
+
+Each rule row is a `RecurrenceSegment` with its own GUID, TaskId, immutable rule fields, inclusive FromDate, exclusive UntilDate, Enabled and CreatedAtUtc. Each occurrence has a stable GUID, TaskId, SegmentId, immutable original SlotDate, movable OccurrenceDate, Status, nullable Actual, IsSkipped, IsOverride, IsSuppressed and UTC audit timestamps. No title, target or organization is duplicated. Occurrence Actual uses invariant decimal `G29` TEXT; Duration Actual is validated whole seconds represented in that same exact TEXT column. Existing one-off Duration INTEGER storage remains unchanged.
+
+`UNIQUE(TaskId, SlotDate)` prevents duplicate executions for the same original slot across all segments. A composite foreign key `(SegmentId, TaskId)` prevents an occurrence from referring to another Task's segment. Both tables cascade when the Task is permanently deleted. Date indexes cover display-date and original-slot range queries; the rule index covers Task/enabled/boundary lookup. Every materialization, split, override, skip and recurrence removal uses one immediate SQLite transaction through the existing workspace operation gate. Occurrence IDs, original slots and creation timestamps are updated in place and never replaced by regeneration. Definition persistence ignores changes to the derived recurrence flags, so opening Calendar does not rewrite Task metadata or timestamps.
+
+### Bounded materialization
+
+Today ensures only its local day, Calendar only its visible date range, and detail/history the requested date window (initially today minus/plus 30 days). A request may span at most 366 inclusive days. Each eligible enabled segment evaluates only dates inside that window; jumping to 2099 does not fill intervening decades. Repeated requests are deterministic and idempotent, backed by slot uniqueness and serialized transactions.
+
+Range reads load occurrences whose original slot **or** overridden display date falls inside the requested window. This both finds moved-in occurrences and remembers moved-out slots so they do not regenerate. Today/Calendar never load the full occurrence history. Rules-only reads load no occurrence rows; individual occurrence reads use the GUID. Series editing deliberately reads that selected Task's occurrence history for safe reconciliation. The existing definition graph is still loaded as one batch for hierarchy and dependency guards; Phase 7 does not introduce definition paging. Materialization is bounded per window and segment, but retained history can grow over the lifetime of a workspace.
+
+### Editing, skips and history
+
+**This occurrence** changes only its date, status, Actual and/or skip state. It marks the occurrence as manually overridden. Moving to a date already occupied by another slot retains both distinct executions, sorted by display date, original slot and GUID. Original slot identity never changes. A skipped row stays stored, disappears from Today/Calendar and remains accessible in history; clearing Skip restores it. Calendar drag defaults to this-occurrence movement.
+
+**This and future** uses the selected occurrence's original slot as an explicit boundary, requires today or a future slot, and requires the new StartDate to equal that boundary. Earlier segments end exclusively there; replaced later segments are disabled. A new segment begins at the boundary with its own rule anchor. Previous segment rules and past occurrences remain intact. This also preserves the schedule for historical dates not yet materialized.
+
+**Entire series** replaces the remaining schedule from the current local day, or from StartDate when first enabling recurrence. The supplied StartDate remains the interval anchor and lower bound; edits never rewrite historical schedules. Previously enabled segments are capped or disabled at the boundary. An occurrence is protected if either its original or displayed date is in the past, it has any manual override or skip, its status is not ToDo, or its Actual is non-null (including zero). Protected rows keep identity and execution data even if they no longer match the new rule.
+
+Only untouched future rows are reconciled: matching slots are attached to the new segment in place; obsolete slots become suppressed tombstones. Suppressed rows stay stored to reserve their stable IDs and are omitted from display/history. If a later edit makes an untouched, still-future slot valid again, that same GUID is reactivated. No reconciliation deletes and recreates historical rows. Keeping an explicit edit flag also preserves a user's intent after reopening or clearing Actual.
+
+Removing recurrence disables all rule segments and suppresses only unprotected remaining occurrences. The Task becomes ordinary ToDo and unscheduled. Existing past, completed, moved, skipped and otherwise edited occurrences remain available from its history, even after restart. Their status and Actual are never merged back into the Task. Normal views stop displaying its occurrences and no new ones are generated until recurrence is explicitly enabled again.
+
+### Values, hierarchy and dependencies
+
+Occurrence progress uses the definition's fixed base Target and that occurrence's Actual, with all Phase 6 validation, precision, duration formatting and capped-bar behavior. Null means no recorded result. Recording a reached result completes only that occurrence if its guards pass; lowering/clearing it below Target reopens only that occurrence. Manual completion cannot bypass an unmet value target or required subtasks/dependencies. A reached value must be lowered/cleared to reopen manually.
+
+Guards use existing definition-level prerequisites. A recurring Task with children does not generate automatic child occurrences. Required child/dependency definitions must be Done; a recurring prerequisite remains ToDo and therefore cannot satisfy the guard merely through one completed occurrence. This deliberate limitation avoids inventing occurrence-to-occurrence dependency mapping. Changing a blocker does not retroactively recalculate stored occurrence statuses; an explicit occurrence edit reevaluates its guards. Ordinary parent/dependency recalculation remains intact, but recurring definitions are excluded from automatic completion.
+
+For the daily 20 push-ups example, Actual 18 leaves that occurrence at 90% and ToDo; Actual 20 completes it. Tomorrow independently has Target 20 and Actual null. A surplus remains on its own occurrence. **Phase 7 implements no carry-over, deficit/surplus propagation, effective target, future-target adjustment or retroactive calculation.**
+
+### Presentation, lifecycle and isolation
+
+Library and Space views display definitions once, with a Repeats indicator and series context. Definition detail contains recurrence settings and bounded occurrence/history navigation. Today and Calendar combine ordinary Tasks, applicable occurrences and existing Events without duplicating the series definition. Opening an occurrence shows its date, original slot, status, value progress, Actual and skip editor, plus an obvious Open series route. The recurrence editor offers the selected-occurrence future scope or entire-series save. Validation errors retain friendly existing error handling; failed occurrence navigation clears the previous execution editor.
+
+Archive and Trash hide a definition and all its occurrences from normal views and prevent further materialization while inactive. Restoration resumes the stored rule without erasing history. Permanent deletion cascades recurrence rows within the existing Task lifecycle transaction. No recurrence data is stored in the global database. Expected-profile checks and the shared operation gate guard every service operation; profile changes clear recurrence editors/history, and stale references cannot access another workspace.
+
+### Verification, limits and the Phase 8 boundary
+
+Automated tests cover migration 6 on populated Phase 6 data, idempotency and unchanged migration hashes; daily/weekly/monthly/ordinal rules and edge dates; bounded far-future generation, stable IDs and uniqueness; independent statuses and exact Actuals; Today/Calendar coexistence with ordinary Tasks and Events; UTC/local-day divergence; moved/skipped persistence, split and entire-series reconciliation; recurrence removal, lifecycle and cascade; profile isolation, stale references, cancellation, concurrency and transaction rollback. They also verify that materialization does not write the Task definition and failed occurrence navigation clears stale UI state. Earlier regression suites remain included.
+
+Native Windows UI Automation acceptance exercised daily Number 20 at Actual 18 then 20 with tomorrow independent; Library showing one definition; M/W/F from a Tuesday; first Saturday over several months; moving one occurrence in its editor and through Calendar drag; persistent skip; future split from daily to weekdays; entire-series every-two-days with an end; history after recurrence removal; profile switching from a draft; and restart persistence. Temporary acceptance profiles were deleted through named app confirmations and the original profile restored. Alternate DPI, touch and exhaustive keyboard traversal still need separate interactive verification.
+
+Phase 7 has no recurring Event rules, inherited subtask recurrence, occurrence dependency graph, editable historical rule segments, target version history or audit log of individual Actual changes. History displays current stored occurrence state in bounded windows. Target/type/unit/currency remain locked once occurrences exist; large series edits and the inherited definition graph are not paged.
+
+Phase 8 can build on stable occurrence GUIDs, original-slot order independent of display moves, preserved segment anchors/boundaries, explicit overrides/skips, exact per-occurrence Actual, and the separate definition base Target. It will need explicit policies for calculation order after moves, skips and segment changes, historical target changes and recalculation scope. This phase neither assumes those policies nor adds CarryIn, CarryOut, EffectiveTarget or propagation/recalculation fields or logic.

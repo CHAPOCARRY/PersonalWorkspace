@@ -114,7 +114,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         NotifyContent();
         OnPropertyChanged(nameof(ActiveSpaceId));
-        Title = navigation.Current.Destination switch { "Task" => "Tasks", "Event" => "Calendar", var destination => destination };
+        Title = navigation.Current.Destination switch { "Task" or "Occurrence" => "Tasks", "Event" => "Calendar", var destination => destination };
         Description = Title switch
         {
             "Today" => "Your daily overview will be implemented in a future phase.",
