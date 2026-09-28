@@ -92,7 +92,7 @@ public sealed class ProfileTests : IAsyncLifetime
         Assert.Equal("WorkspaceItems", reader.GetString(0));
         Assert.True(await reader.ReadAsync());
         Assert.Equal("Tasks", reader.GetString(0));
-        foreach (var table in new[] { "Tags", "Spaces", "ItemTags", "ItemSpaces", "Events", "TaskDependencies", "TaskValues", "TaskRecurrenceRules", "TaskOccurrences" })
+        foreach (var table in new[] { "Tags", "Spaces", "ItemTags", "ItemSpaces", "Events", "TaskDependencies", "TaskValues", "TaskRecurrenceRules", "TaskOccurrences", "TaskCarrySettings", "TaskOccurrenceCalculations" })
         {
             Assert.True(await reader.ReadAsync());
             Assert.Equal(table, reader.GetString(0));

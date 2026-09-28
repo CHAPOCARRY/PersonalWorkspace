@@ -70,5 +70,5 @@ public sealed record OccurrenceRow(Guid ProfileId, OccurrenceItem Item)
 {
     public string Label => $"{Item.Occurrence.OccurrenceDate:d} · {Item.Occurrence.Status}" + (Item.Occurrence.IsSkipped?" · Skipped":"")
         + (Item.Occurrence.OccurrenceDate!=Item.Occurrence.SlotDate?$" · Moved from {Item.Occurrence.SlotDate:d}":"");
-    public string ValueText => TaskValuePresentation.Progress(Item.Value);
+    public string ValueText => Item.Occurrence.IsSkipped ? "Skipped · No work required" : TaskValuePresentation.Progress(Item.Value);
 }

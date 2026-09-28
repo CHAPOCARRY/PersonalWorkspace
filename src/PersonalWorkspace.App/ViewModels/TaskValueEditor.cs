@@ -8,6 +8,7 @@ public sealed class TaskValueEditor : ObservableObject
 {
     private TaskValueType type;
     private string target = "", actual = "", currency = "", unit = "";
+    private bool occurrenceTarget;
     public IReadOnlyList<TaskValueType> Types { get; } = Enum.GetValues<TaskValueType>();
     public TaskValueType Type
     {
@@ -37,10 +38,11 @@ public sealed class TaskValueEditor : ObservableObject
     public string Progress { get { try { return TaskValuePresentation.Progress(Build()); } catch (TaskValidationException) { return ""; } } }
     public double VisualProgress { get { try { return (double)(Build()?.VisualPercent ?? 0); } catch (TaskValidationException) { return 0; } } }
     public TaskValue? Build() => !HasValue ? null : new TaskValue(Type, TaskValuePresentation.Parse(Target, Type),
-        string.IsNullOrWhiteSpace(Actual) ? null : TaskValuePresentation.Parse(Actual, Type), Currency, Unit).Validate();
+        string.IsNullOrWhiteSpace(Actual) ? null : TaskValuePresentation.Parse(Actual, Type), Currency, Unit).Validate(allowZeroTarget: occurrenceTarget);
     public decimal? ParseActual() => string.IsNullOrWhiteSpace(Actual) ? null : TaskValuePresentation.Parse(Actual, Type);
-    public void Load(TaskValue? value)
+    public void Load(TaskValue? value, bool occurrence = false)
     {
+        occurrenceTarget = occurrence;
         Type = value?.Type ?? TaskValueType.Checkbox;
         Target = value is null ? "" : TaskValuePresentation.Input(value.Target, Type);
         Actual = value?.Actual is { } result ? TaskValuePresentation.Input(result, Type) : "";

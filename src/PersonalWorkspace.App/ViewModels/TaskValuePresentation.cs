@@ -41,8 +41,16 @@ public static class TaskValuePresentation
         if (value is null) return "";
         var suffix = value.Type switch { TaskValueType.Percentage => "%", TaskValueType.Currency => " " + value.CurrencyCode, TaskValueType.CustomUnit => " " + value.Unit, _ => "" };
         var target = Input(value.Target, value.Type) + suffix;
-        if (value.Actual is not { } actual) return "No result recorded · Target: " + target;
+        if (value.Actual is not { } actual) return (value.Target == 0 ? "Covered by previous surplus · Target: " : "No result recorded · Target: ") + target;
         var percent = decimal.Round(value.Percent!.Value, 0, MidpointRounding.AwayFromZero);
         return $"{Input(actual, value.Type)} / {target} · {percent:0}% of target";
     }
+
+    public static string Amount(TaskValue value, decimal amount) => Input(amount,value.Type) + (value.Type switch
+    {
+        TaskValueType.Currency => " " + value.CurrencyCode,
+        TaskValueType.CustomUnit => " " + value.Unit,
+        TaskValueType.Percentage => "%",
+        _ => ""
+    });
 }

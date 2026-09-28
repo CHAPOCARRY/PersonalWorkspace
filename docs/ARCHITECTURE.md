@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. Phases 1–7 below extend it and supersede historical statements about empty workspaces, placeholders, multiple application instances, numerical Tasks and recurrence. Carry-over remains outside Phase 7.
+The foundation sections below record the approved Phase 0 design. Phases 1–8 below extend it and supersede historical statements about empty workspaces, placeholders, multiple application instances, numerical Tasks, recurrence and carry-over. Each phase section records its own scope; Phase 8 adds carry without replacing the Phase 7 recurrence model.
 
 ## Scope
 
@@ -490,3 +490,75 @@ Native Windows UI Automation acceptance exercised daily Number 20 at Actual 18 t
 Phase 7 has no recurring Event rules, inherited subtask recurrence, occurrence dependency graph, editable historical rule segments, target version history or audit log of individual Actual changes. History displays current stored occurrence state in bounded windows. Target/type/unit/currency remain locked once occurrences exist; large series edits and the inherited definition graph are not paged.
 
 Phase 8 can build on stable occurrence GUIDs, original-slot order independent of display moves, preserved segment anchors/boundaries, explicit overrides/skips, exact per-occurrence Actual, and the separate definition base Target. It will need explicit policies for calculation order after moves, skips and segment changes, historical target changes and recalculation scope. This phase neither assumes those policies nor adds CarryIn, CarryOut, EffectiveTarget or propagation/recalculation fields or logic.
+
+## Phase 8: Carry-over and Retroactive Recalculation
+
+### Eligibility, policy and history safety
+
+Carry is available only for recurring Number, Currency, Duration and CustomUnit Tasks. Checkbox has no quantitative result; Percentage retains its existing 0–100 bounds and does not support carry. Ordinary one-off Tasks keep their Phase 6 behavior and receive neither policy nor occurrence-calculation rows. Duplicate still creates an ordinary Task without recurrence, carry settings or execution history.
+
+`CarrySettings` contains independent Deficit and Surplus flags, both false by default, plus a persisted Locked flag. With both flags off, existing recurring Tasks retain Phase 7 execution behavior. Settings can change while occurrences are only untouched generated ToDo rows. Any explicit occurrence edit (including a move, skip, status change or recording/clearing Actual), or an automatic completed execution, locks the policy. Clearing Actual or unskipping does not unlock it. Re-saving the same policy is allowed. This deliberately conservative rule avoids silently changing historical targets and introduces no policy-version history. The existing value type/Target/unit/currency lock remains in force once occurrences exist.
+
+The policy belongs to the logical Task series, not an individual recurrence segment. Definition detail shows its two options only for eligible recurring Tasks, explains null results and surplus limits, and disables edits after the history lock. Recurrence may still be edited with the Phase 7 scopes; changing its schedule does not reset policy or carry.
+
+### Workspace migration and exact persistence
+
+Workspace migration **7: Create occurrence carry calculations** adds `TaskCarrySettings(TaskId, CarryDeficit, CarrySurplus, HistoryLocked)` and `TaskOccurrenceCalculations(OccurrenceId, BaseTarget, CarryIn, EffectiveTarget, CarryOut)`. Each is an optional one-to-one row with a cascading foreign key to its owner. A partial `(TaskId, SlotDate)` index supports the nearest non-skipped, non-suppressed predecessor lookup. Migrations 1–6, global migrations, original recurrence tables, occurrence GUIDs, original slots and Actual storage are unchanged.
+
+Migration backfills calculation rows for all existing value occurrences, including Percentage and retained historical series. BaseTarget comes from the approved locked Task target; CarryIn and CarryOut start at zero, and EffectiveTarget equals BaseTarget. Duration targets are copied from integer seconds to exact text. Actual, status, overrides and audit timestamps are not modified. Eligible enabled series receive policies with both flags off and a history lock derived from existing meaningful execution. Checkbox receives no calculation row. Previously removed recurrence still retains its backfilled historical calculations, without becoming a new recurring Task.
+
+New value occurrences snapshot BaseTarget at materialization. Subsequent calculation upserts cannot replace that snapshot. All four calculation values use invariant decimal `G29` TEXT, consistent with Phase 7 occurrence Actual; Duration calculations represent whole seconds. No SQLite REAL or floating-point math is used. Core `ExactDecimal` aligns decimal coefficients using BigInteger and rejects results that cannot fit exactly in .NET decimal, rather than accepting silent precision loss during addition/subtraction. Duration effective targets must also remain within the existing supported whole-second range. Overflow or invalid results reject the entire transaction. Progress formatting retains the existing decimal ratio and rounding conventions; arithmetic for a disabled carry direction is not evaluated unnecessarily.
+
+### Calculation semantics
+
+For a non-skipped occurrence, incoming positive carry is unfinished work. Incoming negative carry is surplus credit, clamped to no less than minus BaseTarget. EffectiveTarget is the exact sum of BaseTarget and that clamped CarryIn, so it never becomes negative. Any credit exceeding this occurrence's base requirement is discarded here and is not banked for later dates.
+
+When Actual is supplied, the difference is EffectiveTarget minus Actual. A positive difference produces CarryOut only with Deficit enabled; a negative difference produces CarryOut only with Surplus enabled. Other cases produce zero. Actual is never clamped or overwritten. Thus 20/18 yields +2, then 22/20 still yields +2; with both policies enabled, 22/25 yields -3 and the next base-20 execution has target 17.
+
+Null Actual means no recorded result, not zero, and always produces zero CarryOut. A positive effective target with null Actual is quantitatively incomplete. Explicit Actual zero can create a deficit. Entering or clearing a result later invokes the same downstream recalculation as any other correction.
+
+A zero EffectiveTarget is quantitatively satisfied even with null Actual. It can become Done when hierarchy/dependency guards permit. The UI says “Covered by previous surplus”; no artificial Actual zero is required. Its outgoing carry is zero unless the user explicitly records positive Actual and Surplus is enabled. For example, 20/50 produces -30, the next occurrence stores CarryIn -20 and target zero, and its unrecorded result emits no further credit. Progress at target zero is 100% without division by zero. Definition Target validation still requires a positive target; allowing zero is restricted to occurrence effective-target validation and presentation.
+
+### Original slots, skips, gaps and segments
+
+Carry follows immutable original SlotDate order, never displayed OccurrenceDate. A moved execution keeps its GUID, original slot, calculation snapshot and position in the chain. Calendar dragging changes only its display date. Editing the moved execution's Actual still affects successors in original-slot order.
+
+A skipped execution is retained but has zero CarryIn, EffectiveTarget and CarryOut as its own work calculation. Its stored Actual is preserved but excluded from arithmetic. The in-memory chain passes preceding carry through the skipped row without consuming or adding anything. Unskipping restores its calculated requirement and recalculates successors. Suppressed unused slots are excluded from the execution chain and never acquire results or new identities through recalculation.
+
+An absent conceptual recurrence slot is different from a skip. It has no recorded Actual and therefore breaks incoming carry. `RecurrenceSchedule.Next` tests the enabled segments between stored slots using interval arithmetic and month/weekday candidates, without walking every intervening day or generating missing occurrences. A daily series with only day 1 and day 3 stored cannot transfer day 1's carry directly to day 3: day 2 is unresolved. If day 2 is later materialized it gets its own predecessor's carry, emits zero until a result exists, and can then affect day 3 after an explicit edit.
+
+Carry crosses This-and-future boundaries because the sequence is grouped by TaskId across all segments. An Entire-series edit retains Phase 7 protected history and Actuals, reconciles only unused future slots, then recalculates the resulting stored sequence from the schedule boundary. Past snapshots/identities are not regenerated. Conceptual gaps use the current preserved segment boundaries; an interval or weekend without a scheduled slot does not itself reset carry.
+
+### Transaction and recalculation algorithm
+
+The recurrence repository retains one immediate SQLite transaction and the existing workspace operation gate. Its callback first applies the requested input change to the scoped state and identifies the earliest/latest directly affected original slots. For carry-enabled affected series, the repository expands that batch to the nearest preceding non-skipped, non-suppressed row and the already-materialized suffix. It also loads that Task's segment definitions. This is a batch read per affected series, not one predecessor query per occurrence. There is no occurrence generation during propagation.
+
+`CarryRecalculator` groups rows by Task, sorts them by original slot, starts from the persisted predecessor output, detects unresolved conceptual gaps, and calculates sequentially. It updates only derived fields and resulting completion status, never downstream Actual or IDs. Explicit execution edits reevaluate completion; unchanged historical calculations are not reevaluated merely because Calendar materializes a surrounding window. Once all directly affected slots have been processed, an unchanged outgoing carry allows propagation to stop. Otherwise it continues to the end of the stored suffix. Rules/policy changes and restoration can explicitly request the complete affected stored suffix.
+
+Completion validation runs against the final calculated result before writes commit. Only changed policy/occurrence/calculation rows are persisted. The Actual correction, all dependent calculations and status changes commit together; validation, precision errors, cancellation or failed SQL leave the prior consistent database state intact. The result returned to the UI is rebuilt from the recalculated state, so it cannot expose pre-calculation targets.
+
+Read-only refreshes with no new materialization request no suffix load or recalculation. Today/Calendar retain their Phase 7 date-window queries, and materialization remains limited to 366 inclusive days per request. Historical correction loads a finite existing suffix, not future decades or unrelated series history. Very large stored suffixes are currently processed in memory rather than streamed in fixed-size pages. Sorted traversal and grouped lookups avoid a quadratic per-occurrence search; changes are written inside the same local transaction.
+
+### Completion, dependencies and hierarchy
+
+Quantitative completion compares Actual against EffectiveTarget. With guards satisfied, a decreased target can complete a later occurrence automatically, and an increased target can reopen Done to ToDo. Other incomplete statuses retain the established behavior. A manual Done request cannot bypass the effective target or non-value guards; manually reopening a covered execution requires correcting its prior credit or skipping it.
+
+Carry math is independent of required child/dependency status. An incomplete blocker can prevent Done but cannot erase a numerical +2 deficit or -3 credit. Phase 7 definition-level prerequisites remain the only guards: no occurrence dependency graph or recursive occurrence tree is introduced. Completing an occurrence leaves the recurring definition ToDo, so it does not complete definition ancestors. Existing ordinary TaskGraph propagation remains unchanged. A blocker change alone does not retroactively rewrite stored occurrence completion; a subsequent explicit occurrence edit, affected quantitative recalculation or series restoration reevaluates the applicable guards.
+
+### Lifecycle, presentation and isolation
+
+Archive and Trash retain policy, snapshots, results and calculated history while hiding the series and stopping active materialization. Restoration recalculates an enabled carry series in the same transaction as its lifecycle change, without generating new dates. Permanent deletion cascades policy and calculation rows through the existing Task and occurrence ownership chain.
+
+Removing recurrence preserves historical calculated values exactly and suppresses unused future occurrences using Phase 7 rules. The ordinary Task receives none of an occurrence's carry or Actual. No future slots are generated. Explicit edits to retained history still recalculate its stored sequence; with recurrence disabled there are no active conceptual recurrence slots to generate. Re-enabling uses the retained locked policy and normal segment/materialization rules.
+
+Occurrence detail distinguishes Base target, unfinished amount carried in or surplus credit, Effective target, Actual and carry forward, with current-culture decimal/duration/unit formatting. It explains original-slot order and skipped/covered behavior. Today, history and Calendar value text use the effective target; for example, 18/22 displays 82%, not 90%. Library remains definition-based and never displays occurrence carry as definition data. Saving an occurrence reloads its calculated result; returning to other views reloads persisted downstream values.
+
+All policy and calculation data exists only in the current profile's workspace.db. Expected-profile checks run under the shared gate, stale references fail, and profile switching clears carry controls and occurrence summaries. Restart reads persisted values rather than depending on view-model state.
+
+### Verification and limits
+
+Automated coverage includes migration 7 and populated Phase 7 backfill, unchanged migration hashes 1–6, default-off and independent policies, eligibility, permanent history locks, exact values and duration bounds, precision-loss rollback, four-day propagation, retroactive completion/reopening, null/zero distinctions, surplus floors and explicit results on covered executions, skips/unskips, moves, segment changes, absent conceptual predecessors, far-future bounded queries, unchanged historical completion during materialization, dependency/subtask guards, lifecycle/removal/cascade, duplication, transaction failure, profile isolation, restart and effective-target presentation. Prior regression suites remain included.
+
+Native Windows UI Automation acceptance exercises the requested 20 push-ups correction through day 3; surplus-only 25 then 15; both policies with 22/25 producing target 17; Actual 50 producing a covered zero target and an unchanged following base target; null Actual followed by an entry; skip pass-through; a moved execution corrected in original-slot order; a daily-to-weekly split carrying across its boundary; locked policy controls; profile isolation; and restart persistence. Temporary profiles are removed through named confirmation dialogs and the original profile restored.
+
+Phase 8 deliberately has no missing-as-zero/overdue policy, automatic movement of missed work, unlimited credit bank, Percentage carry, historical target editing, manual effective-target override or carry-policy version history. Policy and value-definition locks are conservative; create a new series for a different policy after execution begins. No recurring Events, occurrence dependency graphs, recurring subtask trees or Phase 9 features are added. Alternate DPI, touch and exhaustive keyboard verification remain separate interactive checks.
