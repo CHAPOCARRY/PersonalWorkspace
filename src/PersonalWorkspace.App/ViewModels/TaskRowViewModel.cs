@@ -10,7 +10,7 @@ public sealed record TaskRowViewModel(Guid ProfileId, TaskItem Task, string Cont
     public string Title => Task.Item.Title;
     public string HierarchyTitle => new string(' ', Math.Min(Depth, 16) * 3) + (Depth > 0 ? "↳ " : "") + Title;
     public string ProgressText => Progress?.ToString() ?? "";
-    public string ValueText => TaskValuePresentation.Progress(Task.Value is { } value && Occurrence is { } occurrence ? value with { Actual=occurrence.Actual } : Task.Value);
+    public string ValueText => TaskValuePresentation.Progress(Occurrence is { } occurrence ? new OccurrenceItem(Task,occurrence).Value : Task.Value);
     public string ContextText => string.Join(" · ", new[] { Context, Occurrence is not null ? "Occurrence" : Task.IsRecurring ? "Repeats" : "", Progress is null ? "" : "Subtasks: " + ProgressText, ValueText, IsDeleted ? "In Trash" : IsArchived ? "Archived" : "" }.Where(s => s.Length > 0));
     public override string ToString() => Title;
     public TaskStatus ExecutionStatus => Occurrence?.Status ?? Task.Status;

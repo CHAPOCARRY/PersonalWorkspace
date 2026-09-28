@@ -59,27 +59,37 @@ public sealed record RecurrenceSegment(Guid Id, Guid TaskId, RecurrenceRule Rule
 
 public sealed record TaskOccurrence(Guid Id, Guid TaskId, Guid SegmentId, DateOnly SlotDate, DateOnly OccurrenceDate,
     TaskStatus Status, decimal? Actual, bool IsSkipped, bool IsOverride, bool IsSuppressed,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc)
+    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, OccurrenceCalculation? Calculation = null)
 {
     public bool IsProtected(DateOnly today) => SlotDate < today || OccurrenceDate < today || IsOverride || IsSkipped || Status != TaskStatus.ToDo || Actual is not null;
 }
 public sealed record OccurrenceReference(Guid ProfileId, Guid Id);
 public sealed record OccurrenceItem(TaskItem Definition, TaskOccurrence Occurrence)
 {
-    public TaskValue? Value => Definition.Value is { } value ? value with { Actual = Occurrence.Actual } : null;
+    public TaskValue? Value => Definition.Value is { } value ? value with { Target = Occurrence.Calculation?.EffectiveTarget ?? value.Target, Actual = Occurrence.Actual } : null;
 }
 
-// A scoped transaction batch. Range reads load only matching slot/display dates, never all occurrence history.
+// Range reads stay scoped; mutations may request an existing carry suffix before the transaction commits.
 public sealed class RecurrenceState(TaskGraph graph, IEnumerable<RecurrenceSegment> segments, IEnumerable<TaskOccurrence> occurrences)
 {
     public TaskGraph Graph { get; } = graph;
     public Dictionary<Guid, RecurrenceSegment> Segments { get; } = segments.ToDictionary(s => s.Id);
     public Dictionary<Guid, TaskOccurrence> Occurrences { get; } = occurrences.ToDictionary(o => o.Id);
+    public Dictionary<Guid, CarrySettings> CarryPolicies { get; } = [];
+    public Dictionary<Guid, (DateOnly First, DateOnly Last)> Recalculation { get; } = [];
+    public HashSet<Guid> ReevaluateCompletion { get; } = [];
+    public void RecalculateFrom(Guid task, DateOnly slot)
+    {
+        Recalculation[task] = Recalculation.TryGetValue(task, out var range)
+            ? (slot < range.First ? slot : range.First, slot > range.Last ? slot : range.Last) : (slot, slot);
+    }
+    public CarrySettings Policy(Guid task) => CarryPolicies.GetValueOrDefault(task) ?? new();
 }
 public sealed record RecurrenceQuery(Guid? TaskId = null, Guid? OccurrenceId = null, DateOnly? From = null, DateOnly? Through = null, bool RulesOnly = false);
 public interface IRecurrenceRepository
 {
-    Task<T> TransactAsync<T>(WorkspaceContext workspace, RecurrenceQuery query, Func<RecurrenceState, T> change, CancellationToken cancellationToken);
+    Task<T> TransactAsync<T>(WorkspaceContext workspace, RecurrenceQuery query, Func<RecurrenceState, Func<T>> change,
+        Action<RecurrenceState> calculate, CancellationToken cancellationToken);
 }
 public interface IRecurrenceService
 {
@@ -91,4 +101,6 @@ public interface IRecurrenceService
     Task RemoveAsync(TaskReference task, CancellationToken cancellationToken = default);
     Task<OccurrenceItem> UpdateAsync(OccurrenceReference occurrence, DateOnly date, TaskStatus status, decimal? actual, bool skipped, CancellationToken cancellationToken = default);
     Task MoveAsync(OccurrenceReference occurrence, DateOnly date, CancellationToken cancellationToken = default);
+    Task<CarrySettings> GetCarrySettingsAsync(TaskReference task, CancellationToken cancellationToken = default);
+    Task SetCarrySettingsAsync(TaskReference task, bool deficit, bool surplus, CancellationToken cancellationToken = default);
 }

@@ -148,6 +148,32 @@ public static class WorkspaceMigrationCatalog
             );
             CREATE INDEX IX_TaskOccurrences_Date ON TaskOccurrences(OccurrenceDate, TaskId);
             CREATE INDEX IX_TaskOccurrences_Slot ON TaskOccurrences(SlotDate, TaskId);
+            """),
+        new(7, "Create occurrence carry calculations", """
+            CREATE TABLE TaskCarrySettings (
+                TaskId TEXT NOT NULL PRIMARY KEY REFERENCES Tasks(ItemId) ON DELETE CASCADE,
+                CarryDeficit INTEGER NOT NULL DEFAULT 0 CHECK(CarryDeficit IN (0,1)),
+                CarrySurplus INTEGER NOT NULL DEFAULT 0 CHECK(CarrySurplus IN (0,1)),
+                HistoryLocked INTEGER NOT NULL DEFAULT 0 CHECK(HistoryLocked IN (0,1))
+            );
+            CREATE TABLE TaskOccurrenceCalculations (
+                OccurrenceId TEXT NOT NULL PRIMARY KEY REFERENCES TaskOccurrences(Id) ON DELETE CASCADE,
+                BaseTarget TEXT NOT NULL,
+                CarryIn TEXT NOT NULL,
+                EffectiveTarget TEXT NOT NULL,
+                CarryOut TEXT NOT NULL
+            );
+            INSERT INTO TaskOccurrenceCalculations(OccurrenceId,BaseTarget,CarryIn,EffectiveTarget,CarryOut)
+                SELECT o.Id,COALESCE(v.Target,CAST(v.TargetSeconds AS TEXT)),'0',
+                    COALESCE(v.Target,CAST(v.TargetSeconds AS TEXT)),'0'
+                FROM TaskOccurrences o JOIN TaskValues v ON v.ItemId=o.TaskId;
+            INSERT INTO TaskCarrySettings(TaskId,HistoryLocked)
+                SELECT v.ItemId,EXISTS(SELECT 1 FROM TaskOccurrences o WHERE o.TaskId=v.ItemId
+                    AND (o.IsOverride=1 OR o.IsSkipped=1 OR o.Status<>0 OR o.Actual IS NOT NULL))
+                FROM TaskValues v WHERE v.ValueType IN (1,3,4,5)
+                    AND EXISTS(SELECT 1 FROM TaskRecurrenceRules r WHERE r.TaskId=v.ItemId AND r.Enabled=1);
+            CREATE INDEX IX_TaskOccurrences_CarryPredecessor ON TaskOccurrences(TaskId,SlotDate)
+                WHERE IsSkipped=0 AND IsSuppressed=0;
             """)
     ];
 }

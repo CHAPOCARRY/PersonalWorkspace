@@ -7,16 +7,16 @@ public enum TaskValueType { Checkbox, Number, Percentage, Currency, Duration, Cu
 public sealed record TaskValue(TaskValueType Type, decimal Target, decimal? Actual = null, string? CurrencyCode = null, string? Unit = null)
 {
     public const long MaximumDurationSeconds = long.MaxValue / TimeSpan.TicksPerSecond;
-    public bool IsReached => Actual is { } actual && actual >= Target;
-    public decimal? Ratio => Actual / Target;
+    public bool IsReached => Target == 0 || Actual is { } actual && actual >= Target;
+    public decimal? Ratio => Target == 0 ? 1m : Actual / Target;
     public decimal? Percent => Ratio * 100m;
     public decimal VisualPercent => Math.Min(100m, Percent ?? 0m);
 
-    public TaskValue Validate()
+    public TaskValue Validate(bool allowZeroTarget = false)
     {
         if (!Enum.IsDefined(Type) || Type == TaskValueType.Checkbox)
             throw new TaskValidationException("Select a valid value type. Checkbox tasks have no value configuration.");
-        if (Target <= 0) throw new TaskValidationException("Target must be greater than zero.");
+        if (Target < 0 || Target == 0 && !allowZeroTarget) throw new TaskValidationException("Target must be greater than zero.");
         if (Actual < 0) throw new TaskValidationException("Actual cannot be negative.");
         if (Type == TaskValueType.Percentage && (Target > 100 || Actual > 100))
             throw new TaskValidationException("Percentage target and actual cannot exceed 100%.");

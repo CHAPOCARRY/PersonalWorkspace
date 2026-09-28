@@ -146,8 +146,9 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
     public Task<TaskItem> ScheduleAsync(TaskReference reference, DateOnly? date, CancellationToken cancellationToken = default) =>
         MutateAsync(reference, task => { RequireEditable(task); RequireOneOff(task); return task with { ScheduledDate = date }; }, cancellationToken);
 
-    public Task<TaskItem> ApplyAsync(TaskReference reference, TaskAction action, CancellationToken cancellationToken = default) =>
-        MutateAsync(reference, task =>
+    public Task<TaskItem> ApplyAsync(TaskReference reference, TaskAction action, CancellationToken cancellationToken = default)
+    {
+        TaskItem Change(TaskItem task)
         {
             var now = time.GetUtcNow();
             if (action is TaskAction.Archive or TaskAction.RestoreArchive) RequireEditable(task);
@@ -160,7 +161,23 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
                 TaskAction.RestoreTrash => task.Item.DeletedAtUtc is null ? task : task with { Item = task.Item with { DeletedAtUtc = null, ArchivedAtUtc = null } },
                 _ => throw new TaskValidationException("Select a valid task action.")
             };
-        }, cancellationToken);
+        }
+        if (action is TaskAction.RestoreArchive or TaskAction.RestoreTrash && repository is IRecurrenceRepository recurrence)
+            return RunAsync(reference.ProfileId, workspace => recurrence.TransactAsync<TaskItem>(workspace,new(reference.ItemId),state =>
+            {
+                var old = Find(state.Graph,reference.ItemId);
+                state.Graph.Tasks[reference.ItemId] = Stamp(old,Change(old));
+                Recalculate(state.Graph);
+                if (old.IsRecurring && state.Policy(reference.ItemId).Enabled)
+                {
+                    state.RecalculateFrom(reference.ItemId,DateOnly.MinValue);
+                    state.RecalculateFrom(reference.ItemId,DateOnly.MaxValue);
+                    state.ReevaluateCompletion.UnionWith(state.Occurrences.Keys);
+                }
+                return () => state.Graph.Tasks[reference.ItemId];
+            },state => CarryRecalculator.Apply(state,time),cancellationToken),cancellationToken);
+        return MutateAsync(reference,Change,cancellationToken);
+    }
 
     public Task<TaskItem> DuplicateAsync(TaskReference reference, CancellationToken cancellationToken = default) =>
         RunAsync(reference.ProfileId, async workspace =>

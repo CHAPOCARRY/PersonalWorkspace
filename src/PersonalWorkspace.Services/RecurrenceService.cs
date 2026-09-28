@@ -29,11 +29,16 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
                     {
                         // Never resurrect a skipped/edited execution, or a historical suppressed slot.
                         if (existing.IsSuppressed && !existing.IsProtected(Today))
+                        {
                             state.Occurrences[existing.Id] = existing with { SegmentId = segment.Id, IsSuppressed = false, UpdatedAtUtc = Stamp(existing.UpdatedAtUtc) };
+                            state.RecalculateFrom(segment.TaskId,date);
+                        }
                         continue;
                     }
-                    var occurrence = new TaskOccurrence(Guid.NewGuid(), segment.TaskId, segment.Id, date, date, TaskStatus.ToDo, null, false, false, false, now, now);
+                    var occurrence = new TaskOccurrence(Guid.NewGuid(), segment.TaskId, segment.Id, date, date, TaskStatus.ToDo, null, false, false, false, now, now,
+                        definition.Value is { } value ? OccurrenceCalculation.Initial(value.Target) : null);
                     state.Occurrences.Add(occurrence.Id, occurrence); slots.Add((segment.TaskId,date), occurrence);
+                    state.RecalculateFrom(segment.TaskId,date);
                     state.Graph.Tasks[segment.TaskId] = definition with { HasOccurrences = true };
                 }
             }
@@ -57,6 +62,8 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
             rule.Validate();
             if (!Enum.IsDefined(scope)) throw new TaskValidationException("Choose a recurrence edit scope.");
             var definition = Definition(state, task.ItemId); RequireActive(definition);
+            if (CarrySettings.Supports(definition.ValueType) && !state.CarryPolicies.ContainsKey(task.ItemId))
+                state.CarryPolicies[task.ItemId] = new(Locked: state.Occurrences.Values.Any(o => o.IsOverride || o.IsSkipped || o.Status != TaskStatus.ToDo || o.Actual is not null));
             if (!definition.IsRecurring && (definition.Status == TaskStatus.Done || definition.Value?.Actual is not null))
                 throw new TaskValidationException("Reopen this task and clear its one-off Actual before enabling recurrence. Existing results are never transferred silently.");
             var boundary = definition.IsRecurring ? Today : rule.StartDate;
@@ -83,6 +90,8 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
             }
             state.Graph.Tasks[task.ItemId] = definition with { IsRecurring = true, Status = TaskStatus.ToDo, ScheduledDate = null,
                 Item = definition.Item with { UpdatedAtUtc = Stamp(definition.Item.UpdatedAtUtc) } };
+            state.RecalculateFrom(task.ItemId,boundary);
+            state.RecalculateFrom(task.ItemId,DateOnly.MaxValue);
             // Enabling a series must reopen any previously completed definition ancestors.
             TaskService.RecalculateGraph(state.Graph, clock);
             return true;
@@ -100,8 +109,10 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
             return true;
         }, cancellationToken);
 
-    public Task<OccurrenceItem> UpdateAsync(OccurrenceReference occurrence, DateOnly date, TaskStatus status, decimal? actual, bool skipped, CancellationToken cancellationToken = default) =>
-        RunAsync(occurrence.ProfileId, new(OccurrenceId: occurrence.Id), state =>
+    public Task<OccurrenceItem> UpdateAsync(OccurrenceReference occurrence, DateOnly date, TaskStatus status, decimal? actual, bool skipped, CancellationToken cancellationToken = default)
+    {
+        var manualCompletion = false; var manualReopen = false;
+        return RunAsync(occurrence.ProfileId, new(OccurrenceId: occurrence.Id), state =>
         {
             var item = Item(state, occurrence.Id); RequireActive(item.Definition);
             var old = item.Occurrence;
@@ -109,17 +120,42 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
             if (!Enum.IsDefined(status)) throw new TaskValidationException("Choose a valid occurrence status.");
             var value = item.Definition.Value is { } configured ? (configured with { Actual = actual }).Validate() : null;
             if (value is null && actual is not null) throw new TaskValidationException("Checkbox occurrences do not have Actual values.");
-            if (old.Status == TaskStatus.Done && status != TaskStatus.Done && value?.IsReached == true && actual == old.Actual)
-                throw new TaskValidationException("Lower or clear Actual to reopen this occurrence.");
+            manualReopen = old.Status == TaskStatus.Done && status != TaskStatus.Done && actual == old.Actual && skipped == old.IsSkipped;
+            manualCompletion = status == TaskStatus.Done && old.Status != TaskStatus.Done;
             var guards = state.Graph.Prerequisites()[old.TaskId].All(id => state.Graph.Tasks[id].Status == TaskStatus.Done && !state.Graph.Tasks[id].IsRecurring);
-            if (status == TaskStatus.Done && old.Status != TaskStatus.Done && (!guards || value is { IsReached: false }))
+            if (manualCompletion && !guards)
                 throw new TaskValidationException("Reach the target and complete the required subtasks and dependencies before marking this occurrence Done.");
-            if (value is not null) status = value.IsReached && guards ? TaskStatus.Done : status == TaskStatus.Done ? TaskStatus.ToDo : status;
             var updated = old with { OccurrenceDate = date, Status = status, Actual = actual, IsSkipped = skipped, IsOverride = true };
             if (updated != old) updated = updated with { UpdatedAtUtc = Stamp(old.UpdatedAtUtc) };
             state.Occurrences[old.Id] = updated;
+            state.ReevaluateCompletion.Add(old.Id);
+            state.RecalculateFrom(old.TaskId,old.SlotDate);
             return item with { Occurrence = updated };
-        }, cancellationToken);
+        }, cancellationToken, saved =>
+        {
+            if (manualCompletion && !saved.Occurrence.IsSkipped && saved.Value is { IsReached: false })
+                throw new TaskValidationException("Reach this occurrence's effective target before marking it Done.");
+            if (manualReopen && saved.Value is { IsReached: true })
+                throw new TaskValidationException("Lower or clear Actual to reopen this occurrence. If surplus covers its target, correct the earlier result or skip this occurrence.");
+        });
+    }
+
+    public Task<CarrySettings> GetCarrySettingsAsync(TaskReference task, CancellationToken cancellationToken = default) =>
+        RunAsync(task.ProfileId,new(task.ItemId,RulesOnly:true),state => { _ = Definition(state,task.ItemId); return state.Policy(task.ItemId); },cancellationToken);
+
+    public Task SetCarrySettingsAsync(TaskReference task, bool deficit, bool surplus, CancellationToken cancellationToken = default) =>
+        RunAsync(task.ProfileId,new(task.ItemId),state =>
+        {
+            var definition = Definition(state,task.ItemId); RequireActive(definition);
+            if (!definition.IsRecurring || !CarrySettings.Supports(definition.ValueType))
+                throw new TaskValidationException("Carry-over requires a recurring Number, Currency, Duration or Custom unit task.");
+            var old = state.Policy(task.ItemId);
+            if (old.Deficit == deficit && old.Surplus == surplus) return true;
+            if (old.Locked) throw new TaskValidationException("Carry settings are locked because this series has execution history. Create a new series to use another policy.");
+            state.CarryPolicies[task.ItemId] = new(deficit,surplus);
+            state.RecalculateFrom(task.ItemId,DateOnly.MinValue); state.RecalculateFrom(task.ItemId,DateOnly.MaxValue);
+            return true;
+        },cancellationToken);
 
     public Task MoveAsync(OccurrenceReference occurrence, DateOnly date, CancellationToken cancellationToken = default) =>
         RunAsync(occurrence.ProfileId, new(OccurrenceId: occurrence.Id), state =>
@@ -127,6 +163,8 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
             var item = Item(state, occurrence.Id); RequireActive(item.Definition);
             if (item.Occurrence.IsSuppressed) throw new TaskValidationException("This occurrence is no longer scheduled.");
             state.Occurrences[occurrence.Id] = item.Occurrence with { OccurrenceDate = date, IsOverride = true, UpdatedAtUtc = Stamp(item.Occurrence.UpdatedAtUtc) };
+            if (CarrySettings.Supports(item.Definition.ValueType))
+                state.CarryPolicies[item.Definition.Item.Id] = state.Policy(item.Definition.Item.Id) with { Locked = true };
             return true;
         }, cancellationToken);
 
@@ -136,11 +174,25 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
     private static bool Active(TaskItem task) => task.Item.ArchivedAtUtc is null && task.Item.DeletedAtUtc is null;
     private static void RequireActive(TaskItem task) { if (!Active(task)) throw new TaskValidationException("Restore this task before editing its recurrence or occurrences."); }
     private DateTimeOffset Stamp(DateTimeOffset previous) => clock.GetUtcNow() > previous ? clock.GetUtcNow() : previous.AddTicks(1);
-    private async Task<T> RunAsync<T>(Guid profile, RecurrenceQuery query, Func<RecurrenceState,T> operation, CancellationToken cancellationToken)
+    private async Task<T> RunAsync<T>(Guid profile, RecurrenceQuery query, Func<RecurrenceState,T> operation, CancellationToken cancellationToken, Action<T>? validate = null)
     {
         using var lease = await gate.EnterAsync(cancellationToken);
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await repository.TransactAsync(new(profile,database),query,operation,cancellationToken); }
+        try
+        {
+            return await repository.TransactAsync<T>(new(profile,database),query,state =>
+            {
+                var result = operation(state);
+                return () =>
+                {
+                    if (result is OccurrenceItem item) result = (T)(object)Item(state,item.Occurrence.Id);
+                    else if (result is IReadOnlyList<OccurrenceItem> items)
+                        result = (T)(object)items.Select(item => Item(state,item.Occurrence.Id)).ToArray();
+                    validate?.Invoke(result);
+                    return result;
+                };
+            },state => CarryRecalculator.Apply(state,clock),cancellationToken);
+        }
         catch (TaskValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)

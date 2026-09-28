@@ -18,7 +18,8 @@ public sealed record CalendarEntry(Guid ProfileId, DateOnly DisplayDate, TaskIte
     public bool CanRestore => Event is { Item.ArchivedAtUtc: not null } || IsDeleted;
     public string TimeLabel => Event is not { } item ? "Task"
         : item.AllDay ? "All day" : (item.StartDate < DisplayDate ? "Continues" : item.StartTime!.Value.ToString("t", CultureInfo.CurrentCulture));
-    public string Label => Task is { } task ? ((Occurrence?.Status ?? task.Status) == TaskStatus.Done ? "✓ Task · " : "□ Task · ") + Title + (Occurrence is not null ? " · Repeats" : "") : TimeLabel + " · " + Title;
+    public string Label => Task is { } task ? ((Occurrence?.Status ?? task.Status) == TaskStatus.Done ? "✓ Task · " : "□ Task · ") + Title
+        + (Occurrence is { } occurrence ? " · Repeats" + (task.Value is null ? "" : " · " + TaskValuePresentation.Progress(new OccurrenceItem(task,occurrence).Value)) : "") : TimeLabel + " · " + Title;
     public override string ToString() => Label;
     public string DragLabel => "Drag " + (IsTask ? "task " : "event ") + Title;
     public string EventSummary => Event is { } item ?
