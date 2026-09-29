@@ -27,6 +27,9 @@ internal static class CompositionRoot
         services.AddSingleton<IRecurrenceService, RecurrenceService>();
         services.AddSingleton<IEventRepository, SqliteEventRepository>();
         services.AddSingleton<IEventService, EventService>();
+        services.AddSingleton<ITrackerRepository, SqliteTrackerRepository>();
+        services.AddSingleton<ITrackerService, TrackerService>();
+        services.AddSingleton<TrackerWorkspaceViewModel>();
         services.AddSingleton<CalendarViewModel>();
         services.AddSingleton<IOrganizationRepository, SqliteOrganizationRepository>();
         services.AddSingleton<IOrganizationService, OrganizationService>();

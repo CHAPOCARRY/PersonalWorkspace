@@ -121,7 +121,7 @@ public sealed partial class SqliteTaskRepository
                     IsSkipped=$skip, IsOverride=$override, IsSuppressed=$suppressed, UpdatedAtUtc=$updated;
                 """;
             BindParameters(command, ("id",occurrence.Id), ("task",occurrence.TaskId), ("segment",occurrence.SegmentId), ("slot",Date(occurrence.SlotDate)),
-                ("date",Date(occurrence.OccurrenceDate)), ("status",(int)occurrence.Status), ("actual",occurrence.Actual?.ToString("G29",CultureInfo.InvariantCulture)),
+                ("date",Date(occurrence.OccurrenceDate)), ("status",(int)occurrence.Status), ("actual",occurrence.Actual is { } actual ? ExactValueText.Store(actual) : null),
                 ("skip",occurrence.IsSkipped), ("override",occurrence.IsOverride), ("suppressed",occurrence.IsSuppressed),
                 ("created",occurrence.CreatedAtUtc.ToString("O")), ("updated",occurrence.UpdatedAtUtc.ToString("O")));
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -143,7 +143,7 @@ public sealed partial class SqliteTaskRepository
     }
 
     private static string Date(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-    private static string DecimalText(decimal value) => value.ToString("G29",CultureInfo.InvariantCulture);
+    private static string DecimalText(decimal value) => ExactValueText.Store(value);
     private const string OccurrenceSelect = """
         SELECT o.Id,o.TaskId,o.SegmentId,o.SlotDate,o.OccurrenceDate,o.Status,o.Actual,o.IsSkipped,o.IsOverride,o.IsSuppressed,o.CreatedAtUtc,o.UpdatedAtUtc,
             c.BaseTarget,c.CarryIn,c.EffectiveTarget,c.CarryOut
@@ -153,7 +153,7 @@ public sealed partial class SqliteTaskRepository
         ParseDate(reader.GetString(3)),ParseDate(reader.GetString(4)),(TaskStatus)reader.GetInt32(5),reader.IsDBNull(6)?null:ReadDecimal(reader,6),
         reader.GetBoolean(7),reader.GetBoolean(8),reader.GetBoolean(9),ReadUtc(reader,10)!.Value,ReadUtc(reader,11)!.Value,
         reader.IsDBNull(12)?null:new(ReadDecimal(reader,12),ReadDecimal(reader,13),ReadDecimal(reader,14),ReadDecimal(reader,15)));
-    private static decimal ReadDecimal(SqliteDataReader reader,int column) => decimal.Parse(reader.GetString(column),NumberStyles.Float,CultureInfo.InvariantCulture);
+    private static decimal ReadDecimal(SqliteDataReader reader,int column) => ExactValueText.Restore(reader.GetString(column));
     private static DateOnly ParseDate(string date) => DateOnly.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture);
     private static void BindParameters(SqliteCommand command, params (string Name, object? Value)[] values)
     {

@@ -236,7 +236,7 @@ public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceR
         if (reader.IsDBNull(12)) return null;
         var type = (TaskValueType)reader.GetInt32(12);
         var duration = type == TaskValueType.Duration;
-        decimal Number(int index) => duration ? reader.GetInt64(index) : decimal.Parse(reader.GetString(index), NumberStyles.Float, CultureInfo.InvariantCulture);
+        decimal Number(int index) => duration ? reader.GetInt64(index) : ExactValueText.Restore(reader.GetString(index));
         var targetIndex = duration ? 15 : 13; var actualIndex = duration ? 16 : 14;
         return new(type, Number(targetIndex), reader.IsDBNull(actualIndex) ? null : Number(actualIndex),
             reader.IsDBNull(17) ? null : reader.GetString(17), reader.IsDBNull(18) ? null : reader.GetString(18));
@@ -257,8 +257,8 @@ public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceR
                 """;
             var duration = value.Type == TaskValueType.Duration;
             command.Parameters.AddWithValue("$type", (int)value.Type);
-            command.Parameters.AddWithValue("$target", duration ? DBNull.Value : value.Target.ToString("G29", CultureInfo.InvariantCulture));
-            command.Parameters.AddWithValue("$actual", duration ? DBNull.Value : (object?)value.Actual?.ToString("G29", CultureInfo.InvariantCulture) ?? DBNull.Value);
+            command.Parameters.AddWithValue("$target", duration ? DBNull.Value : ExactValueText.Store(value.Target));
+            command.Parameters.AddWithValue("$actual", duration ? DBNull.Value : value.Actual is { } numericActual ? ExactValueText.Store(numericActual) : DBNull.Value);
             command.Parameters.AddWithValue("$seconds", duration ? (long)value.Target : DBNull.Value);
             command.Parameters.AddWithValue("$actualSeconds", duration && value.Actual is { } actual ? (long)actual : DBNull.Value);
             command.Parameters.AddWithValue("$currency", (object?)value.CurrencyCode ?? DBNull.Value);
