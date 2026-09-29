@@ -1,6 +1,6 @@
 # PersonalWorkspace architecture
 
-The foundation sections below record the approved Phase 0 design. Phases 1–8 below extend it and supersede historical statements about empty workspaces, placeholders, multiple application instances, numerical Tasks, recurrence and carry-over. Each phase section records its own scope; Phase 8 adds carry without replacing the Phase 7 recurrence model.
+The foundation sections below record the approved Phase 0 design. Phases 1–9 below extend it and supersede historical statements about empty workspaces, placeholders, multiple application instances, numerical Tasks, recurrence, carry-over and Trackers. Each phase section records its own scope; Phase 9 adds independent measurement Trackers without changing Task execution or carry semantics.
 
 ## Scope
 
@@ -562,3 +562,88 @@ Automated coverage includes migration 7 and populated Phase 7 backfill, unchange
 Native Windows UI Automation acceptance exercises the requested 20 push-ups correction through day 3; surplus-only 25 then 15; both policies with 22/25 producing target 17; Actual 50 producing a covered zero target and an unchanged following base target; null Actual followed by an entry; skip pass-through; a moved execution corrected in original-slot order; a daily-to-weekly split carrying across its boundary; locked policy controls; profile isolation; and restart persistence. Temporary profiles are removed through named confirmation dialogs and the original profile restored.
 
 Phase 8 deliberately has no missing-as-zero/overdue policy, automatic movement of missed work, unlimited credit bank, Percentage carry, historical target editing, manual effective-target override or carry-policy version history. Policy and value-definition locks are conservative; create a new series for a different policy after execution begins. No recurring Events, occurrence dependency graphs, recurring subtask trees or Phase 9 features are added. Alternate DPI, touch and exhaustive keyboard verification remain separate interactive checks.
+
+## Phase 9: Trackers Core
+
+### Independent identity and layering
+
+A `TrackerItem` composes `WorkspaceItem` (`ItemType.Tracker = 3`) with measurement configuration. It is neither a Task nor a TaskOccurrence, has no completion status, and never creates either automatically. Weight, Water, Steps and Mood are ordinary configurations of the same engine. Core owns records, frequency evaluation, validation, aggregate calculations and contracts; Services coordinates workspace access; Data owns SQL; App owns presentation and native controls. Dependency direction remains unchanged. No packages were added.
+
+A definition contains value settings, an optional target, structured frequency/start/end settings, entry mode and aggregation. Title and lifecycle/audit metadata remain on WorkspaceItem. The target is an optional current reference value, not a completion threshold: recording a value below, above or equal to it never completes anything. Boolean false is a recorded measurement, not missing input. No deficit, surplus, carry or effective target belongs to Trackers.
+
+### Migration 8 and exact storage
+
+Workspace migration **8: Create trackers and entries** adds only `Trackers`, `TrackerEntries`, their indexes and an identity-validation trigger. Workspace migrations 1–7, global migrations and the migration runner are unchanged. Existing Phase 8 workspaces upgrade when opened; a new profile applies the same migration. The global database gains no Tracker tables or values.
+
+`Trackers.ItemId` is both its primary key and a cascading foreign key to WorkspaceItems. Its insert trigger requires the referenced WorkspaceItem to have Tracker item type. Structured columns store ValueType, optional Unit/CurrencyCode/ScaleMin/ScaleMax, optional Target/TargetInteger, Frequency, optional StartDate/EndDate, Interval, Weekdays, EntryMode and Aggregation. The repository creates both identity and definition in one immediate transaction. Meaningful definition/lifecycle changes advance WorkspaceItem.UpdatedAtUtc monotonically; unchanged saves and reads do not.
+
+`TrackerEntries` contains a stable GUID, TrackerId, ValueType/EntryMode integrity keys, PeriodDate, LocalDate, LocalTime, Value/IntegerValue, optional plain-text Note, and UTC CreatedAtUtc/UpdatedAtUtc. A composite foreign key ensures the type and entry mode match the owning definition. A partial unique index on `(TrackerId, PeriodDate)` for Single mode prevents duplicate canonical values. Indexed `(TrackerId, PeriodDate, LocalDate, LocalTime, CreatedAtUtc, Id)` and `(TrackerId, LocalDate, LocalTime, CreatedAtUtc, Id)` support period lookup, latest-period lookup, ordered recent entries and date ranges.
+
+Decimal, Percentage, Currency, Distance and CustomUnit values and targets use invariant decimal `G29` TEXT. Integer, Scale, Duration and Boolean use INTEGER columns; Boolean is exactly 0/1. SQLite REAL and binary floating-point arithmetic are not used. `ExactValueText` is the shared Task/Tracker text boundary for exact persistence, current-culture decimal input and whole-second duration formatting/parsing. It rejects ambiguous grouping separators and inputs that decimal parsing would silently round. Existing Task serialization formats remain unchanged.
+
+Supported values:
+
+- Integer: signed Int64 whole values; optional unit.
+- Decimal: signed .NET decimal values; optional unit (for example kg).
+- Percentage: exact decimal from 0 through 100, inclusive.
+- Currency: signed decimal with a trimmed, uppercase, three-ASCII-letter code on the definition. This validates syntax, not an ISO currency registry.
+- Duration: nonnegative whole seconds up to 922337203685, consistent with Phase 6. Input/display accepts minutes:seconds or hours:minutes:seconds, such as 45:00 and 1:15:30; bare numeric seconds are not accepted in the UI.
+- Distance: nonnegative decimal in one controlled definition unit, m, km or mi.
+- Boolean: true or false, with an optional Boolean target.
+- Scale: signed Int64 whole values within configured inclusive minimum/maximum bounds; maximum must exceed minimum. It is not hardcoded to 1–5.
+- CustomUnit: signed decimal with a required trimmed unit of 1–32 characters and no control characters.
+
+Optional targets obey the corresponding entry type's validation. There are no unit/currency conversions, compound measurements or task-style progress percentages.
+
+### Local dates, frequency and periods
+
+Semantic dates are DateOnly, stored as invariant yyyy-MM-dd; entry wall times are TimeOnly, stored without offsets. They are not UTC-midnight instants. Creation/update timestamps alone are UTC. Today uses the current Windows local date through the injected TimeProvider; displayed dates, times and numbers use current Windows culture. Changing timezone preserves written entry dates and wall times.
+
+Frequency is independent of Task recurrence, with no generated placeholder entries:
+
+- Unscheduled: frequency and start date may be omitted. Each entered local date is its own period; no Today/pending expectation is created. Optional start/end dates still bound admissible entry dates.
+- Daily: each date on or after the explicit StartDate is one period.
+- Weekly: seven-day periods anchored exactly to StartDate, including its weekday. An entry on any of those seven days belongs to that period's start date. This does not depend on the culture's calendar-week boundary.
+- EveryXDays: the same anchored interval model, with X from 1 through 999.
+- SelectedWeekdays: each selected day is an individual one-day period. StartDate is a lower bound, not a forced measurement day; unselected days have no expected period. Weekdays use a seven-bit mask with Sunday bit zero.
+- Monthly: StartDate's day-of-month is the measurement anchor. Each month has a period from that day through month end; days before that month's anchor have no expected period. If the month lacks the configured day, the entire month is skipped. January 31 therefore has no February period and resumes on March 31. There is no silent day clamping or backfilling.
+
+StartDate is required for scheduled frequencies. EndDate is optional and inclusive, must not precede StartDate, and truncates entry eligibility even within an anchored week/interval. After EndDate the definition and entries remain discoverable in Trackers/history, but Today excludes it. No replacement Tracker is ever created, and clock passage writes nothing.
+
+### Entries, corrections, ordering and aggregates
+
+Single mode saves without an entry ID upsert the existing entry for that period. Its GUID, original local date/time and creation timestamp survive correction; only changed value/note and UpdatedAtUtc are written. It never silently adds a second value. Multiple mode saves without an ID create distinct GUIDs. Explicit edits always address a stable entry ID belonging to the captured Tracker/profile. Dates and ordering are immutable during a correction; to relocate an entry, delete it and add an entry on the intended date.
+
+`TrackerRules.Aggregate` and `ITrackerService.GetPeriodAsync` provide the canonical period value. Single mode returns its one value. Multiple supports Sum, Average, Min, Max and Last for ordinary numeric types. Percentage and Scale support Average/Min/Max/Last, excluding meaningless bounded-value sums. Boolean supports Last only. Empty periods return null, never an invented zero.
+
+Last sorts by LocalDate, LocalTime, CreatedAtUtc and GUID, in that order. Editing a previous entry does not promote it to Last. Technical timestamp/GUID ties are deterministic. Sum/Average accumulate integer decimal coefficients with BigInteger to avoid binary arithmetic, intermediate overflow and order-dependent precision loss. Sum must fit exactly in .NET decimal or the write is rejected atomically. Average rounds the derived result to the available decimal precision, midpoint away from zero; Integer/Scale averages may be fractional. Duration averages round the summary to whole seconds, midpoint away from zero; duration totals remain within the supported duration range. Canonical entries are never rounded by aggregation.
+
+Entry saves/deletions and aggregate validation occur in one immediate transaction. Validation, cancellation or SQL failure leaves the preceding canonical state intact. Entry correction/deletion changes derived summaries immediately and never modifies the definition's UpdatedAtUtc. Notes are optional trimmed plain text, without rich text or attachments. The UI confirms entry deletion with Cancel as default; deleting an entry never deletes its Tracker. No duplicate aggregate totals, charts or analytic snapshots are persisted.
+
+Once entries exist, type/unit/currency/scale, schedule/start/end, entry mode and aggregation cannot change. These controls are disabled and the service independently enforces the rule, avoiding reinterpretation of stored history. Name and optional current target remain editable. Duplicate the definition to start a differently configured history; the copy has no entries. If every entry is deliberately deleted, there is no remaining history to protect and configuration becomes editable again. There is no target version history or audit log of previous entry values.
+
+### Lifecycle, organization and isolation
+
+Archive and Trash hide a Tracker from active/Today views but preserve its definition and entries. Archive restore clears its archive timestamp; Trash restore clears both lifecycle timestamps. Permanent deletion is allowed only from Trash, requires a named native confirmation, and transactionally cascades entries and generic organization links while leaving Tags/Spaces and all other WorkspaceItems intact. Duplicate creates a fresh active WorkspaceItem with the same title, type, settings, target, schedule, entry mode and aggregation, with fresh timestamps and no entries or assignments, matching existing duplication conventions.
+
+Tracker detail reuses `OrganizationChoice` and the existing organization service for multiple Tag/Space assignments. ItemTags/ItemSpaces reference the same WorkspaceItem GUID; no Tracker-specific organization tables or parallel service were created. Space navigation remains the established Task view; it is not expanded into a mixed-item browser in this phase.
+
+All service operations capture/validate the originating profile inside the shared workspace operation gate. Connections are short-lived, unpooled and enforce foreign keys. Profile switching/deletion waits for in-flight storage operations. View models clear rows, entry inputs, history, definition drafts and assignments when profiles change; a detail route returns to Trackers. Revision checks discard stale reads. Restart reads canonical local data rather than relying on presentation state. Window close also waits for Tracker work.
+
+### Native presentation, Today and bounded reads
+
+The Trackers navigation placeholder is replaced with an active definition library, one compact row per Tracker, with current or latest period value, optional target, frequency, pending state and an explicit Add/Record value action. It does not expand lifetime history into each row. Quick recording opens detail with the value editor ahead of the collapsed definition editor. Relevant creation controls depend on type/frequency; validation is inline and leaves inputs available for correction. Detail includes entry notes, the latest 50 entries, and an explicit date picker to query an older period for corrections/deletion. The selected historical period stays visible after correcting it.
+
+Today keeps its Task/Event sections and adds a bounded-height Trackers section. It includes active scheduled Trackers whose current local date has an expected period, excluding not-started, ended, archived, trashed and unscheduled definitions. A period with no entries is Pending for both Single and Multiple. One entry, including zero or false, removes Pending. Multiple mode is then simply started: no finished-entering flag or target-derived completion is invented. The minute clock refresh detects local date rollover for Today/library without erasing a detail draft. Archived and Trash gain Tracker sections using the same lifecycle actions.
+
+Repository selectors support recent entries (service bound 1–500), a specific period, one selected entry's period, the latest period, or an inclusive local-date range. The service rejects an unspecified/unbounded selector. Library and Today query only the current/latest relevant periods, never every definition's lifetime history. Definitions are still an unpaged collection, consistent with prior libraries, and their period reads are per-definition indexed queries rather than a single batch. A period/date-range result is time-bounded but not row-paged; very dense histories may need paging later. SQLite operations retain the existing local synchronous driver behavior.
+
+### Verification, limits and Phase 10 compatibility
+
+Automated tests cover migration 8 upgrading populated Phase 8 data, idempotency, unchanged migration hashes 1–7, global/workspace separation, all nine types, exact values and input, optional targets, bounds, local-date frequencies, monthly skips, start/end eligibility, Single uniqueness, stable Multiple ordering, each compatible aggregate, overflow/rollback, notes, historical correction/deletion, definition timestamps/history locks, lifecycle/cascades, duplication, generic relationships, profile isolation, local Today and bounded period/range/recent queries. Prior Profile/Task/organization/Event/Calendar/subtask/dependency/value/recurrence/carry tests remain included.
+
+Native Windows UI Automation acceptance exercises Weight Decimal kg Daily Single target 75 (pending, 78.4 then canonical 78.2); Water CustomUnit L Multiple Sum target 2.5 (0.5 + 0.7 + 0.4 = 1.6; delete 0.7 = 0.9); Steps Integer 10000; Mood Scale 1–5 with 4 accepted/6 rejected; Study time Duration 1:15:30; end tomorrow and an already-ended counterpart; definition-only duplication; archive/trash/restore and cancel/confirm permanent deletion; profile switching and restart persistence. Automated clock advancement verifies the end-tomorrow boundary without changing the Windows clock. Acceptance profiles are removed through named confirmation dialogs and the original profile restored.
+
+Phase 9 deliberately defers Tracker Calendar visualization, charts, heatmaps, streaks, cross-Tracker comparisons, annotations, dashboards, automatic replacement after EndDate, Tracker-to-Task automation, compound measurements, notifications and other later item types. Alternative DPI, touch and exhaustive keyboard/screen-reader checks remain separate interactive checks. No Phase 10 feature is implemented.
+
+Phase 10 can query canonical exact entries by local date range, group their persisted PeriodDate values and reuse the same aggregate method. Stable definition/entry IDs, deterministic ordering, notes, type/unit metadata and indexed ranges support future analytics without schema redesign. Corrections/deletions naturally affect recomputation because no stale derived totals are stored. Any later cross-Tracker comparison must check compatible types/units; target history, configuration versioning and richer annotations would require explicitly designed extensions, rather than treating the current optional target as a historical snapshot.

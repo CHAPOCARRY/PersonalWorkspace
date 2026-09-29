@@ -1,0 +1,28 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.TrackerEditorView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="{StaticResource Space12}">
+        <TextBox Header="Name" Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TrackerName" />
+        <TextBlock Text="Value settings, dates, entry mode and aggregation are fixed after recording entries. Duplicate for a different configuration." Style="{StaticResource BodyStyle}" Visibility="{Binding Locked, Converter={StaticResource BoolVisibility}}" />
+        <ContentControl IsEnabled="{Binding CanConfigure}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space12}">
+            <ComboBox Header="Value type" ItemsSource="{Binding Types}" SelectedItem="{Binding Type, Mode=TwoWay}" AutomationProperties.AutomationId="TrackerType" />
+            <TextBox Header="Unit" Text="{Binding Unit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding HasUnit, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerUnit" />
+            <ComboBox Header="Distance unit" ItemsSource="{Binding DistanceUnits}" SelectedItem="{Binding Unit, Mode=TwoWay}" Visibility="{Binding IsDistance, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerDistanceUnit" />
+            <TextBox Header="Currency code" Text="{Binding Currency, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding IsCurrency, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerCurrency" />
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}" Visibility="{Binding IsScale, Converter={StaticResource BoolVisibility}}">
+                <TextBox Header="Scale minimum" Text="{Binding Minimum, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TrackerMinimum" />
+                <TextBox Header="Scale maximum" Text="{Binding Maximum, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TrackerMaximum" />
+            </StackPanel>
+            <ComboBox Header="Frequency" ItemsSource="{Binding Frequencies}" SelectedItem="{Binding Frequency, Mode=TwoWay}" AutomationProperties.AutomationId="TrackerFrequency" />
+            <TextBox Header="Every X days" Text="{Binding Interval, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding IsInterval, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerInterval" />
+            <ItemsControl ItemsSource="{Binding Days}" Visibility="{Binding IsWeekdays, Converter={StaticResource BoolVisibility}}">
+                <ItemsControl.ItemTemplate><DataTemplate><CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" /></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <CalendarDatePicker x:Name="StartPicker" Header="Start date (optional when unscheduled)" DateChanged="OnStartChanged" AutomationProperties.AutomationId="TrackerStart" />
+            <Button Content="Clear start date" Click="OnClearStart" />
+            <CalendarDatePicker x:Name="EndPicker" Header="End date (optional)" DateChanged="OnEndChanged" AutomationProperties.AutomationId="TrackerEnd" />
+            <Button Content="Clear end date" Click="OnClearEnd" />
+            <ComboBox Header="Entries per period" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode, Mode=TwoWay}" AutomationProperties.AutomationId="TrackerMode" />
+        </StackPanel></ContentControl>
+        <TextBox Header="Target (optional)" PlaceholderText="{Binding TargetHint}" Text="{Binding Target, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TrackerTarget" />
+        <ComboBox Header="Period aggregation" ItemsSource="{Binding Aggregations}" SelectedItem="{Binding Aggregation, Mode=TwoWay}" Visibility="{Binding IsMultiple, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="TrackerAggregation" />
+    </StackPanel>
+</UserControl>

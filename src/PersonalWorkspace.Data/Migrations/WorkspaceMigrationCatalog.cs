@@ -174,6 +174,60 @@ public static class WorkspaceMigrationCatalog
                     AND EXISTS(SELECT 1 FROM TaskRecurrenceRules r WHERE r.TaskId=v.ItemId AND r.Enabled=1);
             CREATE INDEX IX_TaskOccurrences_CarryPredecessor ON TaskOccurrences(TaskId,SlotDate)
                 WHERE IsSkipped=0 AND IsSuppressed=0;
+            """),
+        new(8, "Create trackers and entries", """
+            CREATE TABLE Trackers (
+                ItemId TEXT NOT NULL PRIMARY KEY REFERENCES WorkspaceItems(Id) ON DELETE CASCADE,
+                ValueType INTEGER NOT NULL CHECK(ValueType BETWEEN 0 AND 8),
+                Unit TEXT NULL CHECK(Unit IS NULL OR length(trim(Unit)) BETWEEN 1 AND 32),
+                CurrencyCode TEXT NULL,
+                ScaleMin INTEGER NULL,
+                ScaleMax INTEGER NULL,
+                Target TEXT NULL,
+                TargetInteger INTEGER NULL CHECK(TargetInteger IS NULL OR typeof(TargetInteger) = 'integer'),
+                Frequency INTEGER NOT NULL CHECK(Frequency BETWEEN 0 AND 5),
+                StartDate TEXT NULL,
+                EndDate TEXT NULL CHECK(EndDate IS NULL OR StartDate IS NULL OR EndDate >= StartDate),
+                Interval INTEGER NOT NULL CHECK(Interval BETWEEN 1 AND 999),
+                Weekdays INTEGER NOT NULL CHECK(Weekdays BETWEEN 0 AND 127),
+                EntryMode INTEGER NOT NULL CHECK(EntryMode IN (0,1)),
+                Aggregation INTEGER NOT NULL CHECK(Aggregation BETWEEN 0 AND 4),
+                CHECK(Frequency = 0 OR StartDate IS NOT NULL),
+                CHECK(Frequency <> 4 OR Weekdays > 0),
+                CHECK((ValueType = 3 AND CurrencyCode IS NOT NULL AND CurrencyCode GLOB '[A-Z][A-Z][A-Z]') OR (ValueType <> 3 AND CurrencyCode IS NULL)),
+                CHECK(ValueType <> 5 OR Unit IN ('m','km','mi')),
+                CHECK(ValueType <> 8 OR Unit IS NOT NULL),
+                CHECK(ValueType <> 7 OR (ScaleMin IS NOT NULL AND ScaleMax IS NOT NULL AND ScaleMax > ScaleMin)),
+                CHECK((ValueType IN (0,4,6,7) AND Target IS NULL) OR (ValueType NOT IN (0,4,6,7) AND TargetInteger IS NULL)),
+                CHECK(ValueType <> 6 OR (Aggregation = 4 AND (TargetInteger IS NULL OR TargetInteger IN (0,1)))),
+                CHECK(ValueType <> 4 OR TargetInteger IS NULL OR TargetInteger BETWEEN 0 AND 922337203685),
+                UNIQUE(ItemId, ValueType, EntryMode)
+            );
+            CREATE TRIGGER TR_Trackers_Identity BEFORE INSERT ON Trackers
+                WHEN NOT EXISTS(SELECT 1 FROM WorkspaceItems WHERE Id = NEW.ItemId AND ItemType = 3)
+                BEGIN SELECT RAISE(ABORT, 'Tracker requires a Tracker WorkspaceItem'); END;
+            CREATE TABLE TrackerEntries (
+                Id TEXT NOT NULL PRIMARY KEY,
+                TrackerId TEXT NOT NULL,
+                ValueType INTEGER NOT NULL,
+                EntryMode INTEGER NOT NULL,
+                PeriodDate TEXT NOT NULL,
+                LocalDate TEXT NOT NULL,
+                LocalTime TEXT NOT NULL,
+                Value TEXT NULL,
+                IntegerValue INTEGER NULL CHECK(IntegerValue IS NULL OR typeof(IntegerValue) = 'integer'),
+                Note TEXT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL,
+                FOREIGN KEY(TrackerId, ValueType, EntryMode) REFERENCES Trackers(ItemId, ValueType, EntryMode) ON DELETE CASCADE,
+                CHECK((ValueType IN (0,4,6,7) AND Value IS NULL AND IntegerValue IS NOT NULL) OR
+                    (ValueType NOT IN (0,4,6,7) AND Value IS NOT NULL AND IntegerValue IS NULL)),
+                CHECK(ValueType <> 6 OR IntegerValue IN (0,1)),
+                CHECK(ValueType <> 4 OR IntegerValue BETWEEN 0 AND 922337203685)
+            );
+            CREATE UNIQUE INDEX IX_TrackerEntries_Single ON TrackerEntries(TrackerId, PeriodDate) WHERE EntryMode = 0;
+            CREATE INDEX IX_TrackerEntries_Period ON TrackerEntries(TrackerId, PeriodDate, LocalDate, LocalTime, CreatedAtUtc, Id);
+            CREATE INDEX IX_TrackerEntries_Date ON TrackerEntries(TrackerId, LocalDate, LocalTime, CreatedAtUtc, Id);
             """)
     ];
 }

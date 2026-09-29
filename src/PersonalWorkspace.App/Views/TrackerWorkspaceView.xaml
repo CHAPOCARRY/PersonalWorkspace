@@ -1,0 +1,50 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.TrackerWorkspaceView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:views="using:PersonalWorkspace.App.Views">
+    <Grid>
+        <views:TrackerListView Visibility="{Binding IsLibrary, Converter={StaticResource BoolVisibility}}" />
+        <ScrollViewer Padding="{StaticResource ContentPadding}" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding IsEditor, Converter={StaticResource BoolVisibility}}">
+            <StackPanel Spacing="{StaticResource Space16}" MaxWidth="{StaticResource TaskDetailWidth}" HorizontalAlignment="Stretch">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}">
+                    <Button Content="Back to Trackers" Command="{Binding BackCommand}" />
+                    <Button Content="Tracker actions" Tag="{Binding DetailRow}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding IsIdle}"><Button.Flyout><MenuFlyout Opening="OnActionsOpening" /></Button.Flyout></Button>
+                </StackPanel>
+                <TextBlock Text="{Binding Heading}" Style="{StaticResource PageTitleStyle}" />
+                <TextBlock Text="{Binding Error}" Style="{StaticResource BodyStyle}" Foreground="{ThemeResource Danger}" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="TrackerError" />
+                <ContentControl Visibility="{Binding IsNew, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding CanEdit}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space12}">
+                    <views:TrackerEditorView DataContext="{Binding Editor}" />
+                    <Button Content="Create Tracker" Command="{Binding SaveDefinitionCommand}" />
+                </StackPanel></ContentControl>
+                <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="{Binding DefinitionSummary}" Style="{StaticResource BodyStyle}" />
+                    <TextBlock Text="{Binding CurrentSummary}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="TrackerCurrentValue" />
+                    <ContentControl IsEnabled="{Binding CanRecord}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space8}">
+                        <TextBlock Text="{Binding EntryHeading}" FontSize="{StaticResource SectionTitle}" />
+                        <CalendarDatePicker x:Name="EntryPicker" Header="Entry date" DateChanged="OnEntryDateChanged" IsEnabled="{Binding CanChooseEntryDate}" AutomationProperties.AutomationId="TrackerEntryDate" />
+                        <TextBox Header="{Binding EntryHint}" Text="{Binding EntryValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding IsNumeric, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerEntryValue" />
+                        <ComboBox Header="Value" ItemsSource="{Binding BooleanValues}" SelectedItem="{Binding EntryValue, Mode=TwoWay}" Visibility="{Binding IsBoolean, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerEntryBoolean" />
+                        <TextBox Header="Note (optional)" Text="{Binding EntryNote, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TrackerEntryNote" />
+                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}"><Button Content="{Binding EntryButton}" Command="{Binding SaveEntryCommand}" AutomationProperties.AutomationId="TrackerSaveEntry" /><Button Content="New entry / cancel correction" Command="{Binding CancelEntryCommand}" /></StackPanel>
+                    </StackPanel></ContentControl>
+                    <Expander Header="Edit Tracker definition" HorizontalAlignment="Stretch">
+                        <ContentControl IsEnabled="{Binding CanEdit}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space12}"><views:TrackerEditorView DataContext="{Binding Editor}" /><Button Content="Save Tracker" Command="{Binding SaveDefinitionCommand}" /></StackPanel></ContentControl>
+                    </Expander>
+                    <Expander Header="Tags and spaces" HorizontalAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding Assignments}" IsEnabled="{Binding CanEdit}"><ItemsControl.ItemTemplate><DataTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}"><TextBlock Text="{Binding Label}" VerticalAlignment="Center" /><Button Content="{Binding ActionLabel}" Tag="{Binding}" Click="OnAssign" AutomationProperties.Name="{Binding ActionDescription}" /></StackPanel>
+                        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    </Expander>
+                    <TextBlock Text="Entry history" FontSize="{StaticResource SectionTitle}" />
+                    <CalendarDatePicker x:Name="HistoryPicker" Header="Browse the period containing this date" DateChanged="OnHistoryDateChanged" AutomationProperties.AutomationId="TrackerHistoryDate" />
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}" ><Button Content="Load period" Command="{Binding LoadPeriodCommand}" IsEnabled="{Binding IsIdle}" /><Button Content="Latest 50 entries" Command="{Binding RecentEntriesCommand}" IsEnabled="{Binding IsIdle}" /></StackPanel>
+                    <ItemsControl ItemsSource="{Binding Entries}" IsEnabled="{Binding CanEdit}"><ItemsControl.ItemTemplate><DataTemplate>
+                        <Grid ColumnSpacing="{StaticResource Space12}" Padding="{StaticResource TaskRowPadding}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="{Binding Label}" Style="{StaticResource BodyStyle}" /><TextBlock Text="{Binding Note}" Style="{StaticResource BodyStyle}" /></StackPanel>
+                            <Button Grid.Column="1" Content="Edit entry" Tag="{Binding}" Click="OnEditEntry" />
+                            <Button Grid.Column="2" Content="Delete entry" Tag="{Binding}" Click="OnDeleteEntry" />
+                        </Grid>
+                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
