@@ -10,7 +10,7 @@ using Xunit;
 
 namespace PersonalWorkspace.Tests;
 
-public sealed class TrackerTests : IAsyncLifetime
+public sealed partial class TrackerTests : IAsyncLifetime
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "PersonalWorkspace.Tests", Guid.NewGuid().ToString("N"));
     private readonly ApplicationPaths paths;

@@ -86,8 +86,9 @@ public static class TrackerRules
             throw new TrackerValidationException("The period duration exceeds the supported range.");
         return new(result);
     }
-    private static decimal SumOrAverage(decimal[] values, bool average)
+    public static decimal SumOrAverage(decimal[] values, bool average)
     {
+        if (values.Length == 0) throw new ArgumentException("At least one value is required.", nameof(values));
         // Accumulate integer coefficients at scale 28. This avoids order-dependent rounding
         // and intermediate overflow (including an average of several decimal.MaxValue values).
         BigInteger sum = 0;

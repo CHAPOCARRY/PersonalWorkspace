@@ -27,9 +27,11 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
     private DateOnly? historyPeriod;
     private TrackerEditor editor = new();
     public TrackerWorkspaceViewModel(ITrackerService service, IOrganizationService organization, ICurrentProfile current,
-        INavigationService navigation, TimeProvider clock, ILogger<TrackerWorkspaceViewModel> logger)
+        INavigationService navigation, TimeProvider clock, ILogger<TrackerWorkspaceViewModel> logger, TrackerAnalyticsViewModel? analytics = null)
     {
         this.service = service; this.organization = organization; this.current = current; this.navigation = navigation; this.clock = clock; this.logger = logger;
+        Analytics = analytics;
+        if (Analytics is not null) Analytics.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(TrackerAnalyticsViewModel.IsBusy)) Notify(); };
         observedProfile = current.Current?.Id;
         navigation.Changed += (_, _) => { Notify(); _ = ReloadAsync(); };
         current.Changed += (_, _) =>
@@ -40,13 +42,14 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
         };
     }
     private DateOnly Today => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+    public TrackerAnalyticsViewModel? Analytics { get; }
     public bool IsArea => navigation.Current.Destination is "Trackers" or "Tracker";
     public bool IsLibrary => navigation.Current.Destination == "Trackers";
     public bool IsSection => navigation.Current.Destination is "Today" or "Archived" or "Trash";
     public bool IsEditor => navigation.Current.Destination == "Tracker";
     public bool IsDetail => IsEditor && detail is not null;
     public bool IsNew => IsEditor && navigation.Current.EntityId == "new";
-    public bool IsBusy => busy || loading;
+    public bool IsBusy => busy || loading || Analytics?.IsBusy == true;
     public bool IsIdle => !IsBusy && current.Current is not null;
     public bool CanEdit => IsIdle && editorProfile is not null && detail?.Item.DeletedAtUtc is null;
     public bool CanRecord => CanEdit && detail is { IsActive: true };
@@ -63,7 +66,8 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
     public string CurrentSummary { get; private set; } = "";
     public string? Error { get => error; private set => SetProperty(ref error, value); }
     public TrackerEditor Editor { get => editor; private set => SetProperty(ref editor, value); }
-    public string EntryValue { get => entryValue; set => SetProperty(ref entryValue, value); }
+    public string EntryValue { get => entryValue; set { if (SetProperty(ref entryValue, value)) OnPropertyChanged(nameof(BooleanEntryValue)); } }
+    public string? BooleanEntryValue { get => EntryValue is "true" or "false" ? EntryValue : null; set => EntryValue = value ?? ""; }
     public string EntryNote { get => entryNote; set => SetProperty(ref entryNote, value); }
     public DateTimeOffset? EntryDate { get => entryDate; set => SetProperty(ref entryDate, value); }
     public DateTimeOffset? HistoryDate { get => historyDate; set => SetProperty(ref historyDate, value); }
@@ -77,10 +81,15 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
     {
         var request = ++revision; var profile = current.Current?.Id; var route = navigation.Current;
         loading = true; Error = null; Notify();
-        if (!preserveDraft) { detail = null; reference = null; editorProfile = null; Entries = []; Assignments = []; CurrentSummary = ""; historyPeriod = null; HistoryDate = null; ResetEntry(); }
+        if (!preserveDraft)
+        {
+            if (reference?.ItemId.ToString("D") != route.EntityId) Analytics?.Clear();
+            detail = null; reference = null; editorProfile = null; Entries = []; Assignments = []; CurrentSummary = ""; historyPeriod = null; HistoryDate = null; ResetEntry();
+        }
         try
         {
             if (profile is null) { Clear(); return; }
+            if (!IsEditor || IsNew) Analytics?.Clear();
             if (IsLibrary || IsSection)
             {
                 var collection = route.Destination switch { "Archived" => TrackerCollection.Archived, "Trash" => TrackerCollection.Trash, _ => TrackerCollection.Active };
@@ -112,6 +121,7 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
                         .Concat(catalog.Spaces.Where(s => s.ArchivedAtUtc is null || catalog.ItemSpaces.Contains(new(id, s.Id))).Select(s =>
                             new OrganizationChoice(r, s.Id, OrganizationKind.Space, s.Name, s.Color, catalog.ItemSpaces.Contains(new(id, s.Id)), s.ArchivedAtUtc is not null))).ToArray();
                     if (!preserveDraft) ResetEntry();
+                    if (Analytics is not null) await Analytics.SetTrackerAsync(r);
                 }
             }
         }

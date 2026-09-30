@@ -4,7 +4,7 @@ using PersonalWorkspace.Core;
 
 namespace PersonalWorkspace.Data;
 
-public sealed class SqliteTrackerRepository : ITrackerRepository
+public sealed partial class SqliteTrackerRepository : ITrackerRepository, ITrackerAnalyticsRepository
 {
     private const string Select = """
         SELECT w.Id,w.Title,w.CreatedAtUtc,w.UpdatedAtUtc,w.ArchivedAtUtc,w.DeletedAtUtc,
