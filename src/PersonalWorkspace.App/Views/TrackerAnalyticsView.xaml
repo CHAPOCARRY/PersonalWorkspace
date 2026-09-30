@@ -1,0 +1,38 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.TrackerAnalyticsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="{StaticResource Space12}">
+        <ComboBox Header="Date range" ItemsSource="{Binding Presets}" DisplayMemberPath="Label" SelectedItem="{Binding Preset, Mode=TwoWay}" AutomationProperties.AutomationId="AnalyticsPreset" />
+        <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}" Visibility="{Binding IsCustom, Converter={StaticResource BoolVisibility}}">
+            <CalendarDatePicker x:Name="FromPicker" Header="From period start" DateChanged="OnFromChanged" AutomationProperties.AutomationId="AnalyticsFrom" />
+            <CalendarDatePicker x:Name="ThroughPicker" Header="Through period start" DateChanged="OnThroughChanged" AutomationProperties.AutomationId="AnalyticsThrough" />
+        </StackPanel>
+        <Expander Header="Compare Trackers (up to three others)" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="{StaticResource Space8}">
+                <TextBlock Text="Choose the same value type, unit, currency and scale bounds. Values share one axis; there is no conversion or normalization." Style="{StaticResource BodyStyle}" />
+                <ItemsControl ItemsSource="{Binding Choices}"><ItemsControl.ItemTemplate><DataTemplate><CheckBox Content="{Binding Title}" IsChecked="{Binding Selected, Mode=TwoWay}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            </StackPanel>
+        </Expander>
+        <Button Content="Refresh analytics / apply comparison" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="AnalyticsRefresh" />
+        <ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" />
+        <TextBlock Text="{Binding Error}" Foreground="{ThemeResource Danger}" Style="{StaticResource BodyStyle}" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="AnalyticsError" />
+        <TextBlock Text="{Binding RangeLabel}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="AnalyticsRange" />
+        <Expander Header="About these metrics" HorizontalAlignment="Stretch"><StackPanel Spacing="{StaticResource Space8}">
+            <TextBlock Text="Complete periods whose start dates are in this range. Missing is not zero. Streaks are limited to this range; missing expected periods break them, including the current period." Style="{StaticResource BodyStyle}" />
+            <TextBlock Text="Targets use the current definition and archive date. Earlier archive/restore intervals are unavailable." Style="{StaticResource BodyStyle}" />
+        </StackPanel></Expander>
+        <TextBlock Text="{Binding EmptyText}" Style="{StaticResource BodyStyle}" Visibility="{Binding HasData, Converter={StaticResource BoolVisibility}, ConverterParameter=Invert}" AutomationProperties.AutomationId="AnalyticsEmpty" />
+        <ItemsControl ItemsSource="{Binding Metrics}" AutomationProperties.AutomationId="AnalyticsMetrics"><ItemsControl.ItemTemplate><DataTemplate>
+            <Grid ColumnSpacing="{StaticResource Space16}" Padding="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Name}" Style="{StaticResource BodyStyle}" /><TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+            </Grid>
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        <StackPanel Spacing="{StaticResource Space8}" Visibility="{Binding IsNumeric, Converter={StaticResource BoolVisibility}}">
+            <ComboBox Header="Chart" ItemsSource="{Binding ChartKinds}" SelectedItem="{Binding ChartKind, Mode=TwoWay}" AutomationProperties.AutomationId="AnalyticsChartKind" />
+            <StackPanel x:Name="Legend" Spacing="{StaticResource Space4}" />
+            <Canvas x:Name="Chart" Height="{StaticResource AnalyticsChartHeight}" HorizontalAlignment="Stretch" SizeChanged="OnChartSizeChanged" PointerMoved="OnChartPointerMoved" Background="Transparent" AutomationProperties.Name="Tracker period chart" AutomationProperties.AutomationId="AnalyticsChart" />
+            <TextBlock x:Name="Inspection" Text="Point to a value to inspect it. Keyboard users can focus chart markers for values." Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="AnalyticsInspection" />
+        </StackPanel>
+        <TextBlock Text="Calendar heatmap · latest 366 days of the range" FontSize="{StaticResource SectionTitle}" />
+        <TextBlock Text="Each date shows its period's value. ✓ target reached/true, × target not reached/false, • recorded, – missing, blank not expected. Weekly/interval values repeat within their period; summaries count each period once." Style="{StaticResource BodyStyle}" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Heatmaps" Spacing="{StaticResource Space12}" /></ScrollViewer>
+    </StackPanel>
+</UserControl>

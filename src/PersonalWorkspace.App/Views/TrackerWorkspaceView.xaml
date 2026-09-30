@@ -16,11 +16,14 @@
                 <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding IsDetail, Converter={StaticResource BoolVisibility}}">
                     <TextBlock Text="{Binding DefinitionSummary}" Style="{StaticResource BodyStyle}" />
                     <TextBlock Text="{Binding CurrentSummary}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="TrackerCurrentValue" />
+                    <Expander Header="Analytics" HorizontalAlignment="Stretch" x:Name="AnalyticsExpander" IsExpanded="{Binding Analytics.IsOpen, Mode=TwoWay}" AutomationProperties.AutomationId="TrackerAnalyticsSection">
+                        <views:TrackerAnalyticsView DataContext="{Binding Analytics}" />
+                    </Expander>
                     <ContentControl IsEnabled="{Binding CanRecord}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space8}">
                         <TextBlock Text="{Binding EntryHeading}" FontSize="{StaticResource SectionTitle}" />
                         <CalendarDatePicker x:Name="EntryPicker" Header="Entry date" DateChanged="OnEntryDateChanged" IsEnabled="{Binding CanChooseEntryDate}" AutomationProperties.AutomationId="TrackerEntryDate" />
                         <TextBox Header="{Binding EntryHint}" Text="{Binding EntryValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding IsNumeric, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerEntryValue" />
-                        <ComboBox Header="Value" ItemsSource="{Binding BooleanValues}" SelectedItem="{Binding EntryValue, Mode=TwoWay}" Visibility="{Binding IsBoolean, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerEntryBoolean" />
+                        <ComboBox Header="Value" ItemsSource="{Binding BooleanValues}" SelectedItem="{Binding BooleanEntryValue, Mode=TwoWay}" Visibility="{Binding IsBoolean, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrackerEntryBoolean" />
                         <TextBox Header="Note (optional)" Text="{Binding EntryNote, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TrackerEntryNote" />
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}"><Button Content="{Binding EntryButton}" Command="{Binding SaveEntryCommand}" AutomationProperties.AutomationId="TrackerSaveEntry" /><Button Content="New entry / cancel correction" Command="{Binding CancelEntryCommand}" /></StackPanel>
                     </StackPanel></ContentControl>

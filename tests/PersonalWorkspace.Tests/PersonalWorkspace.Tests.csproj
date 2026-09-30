@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Exercise UI-independent presentation state without loading WinUI in the test host. -->
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerAnalyticsViewModel.cs" Link="Presentation/TrackerAnalyticsViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerEditor.cs" Link="Presentation/TrackerEditor.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerWorkspaceViewModel.cs" Link="Presentation/TrackerWorkspaceViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TaskWorkspaceViewModel.cs" Link="Presentation/TaskWorkspaceViewModel.cs" />

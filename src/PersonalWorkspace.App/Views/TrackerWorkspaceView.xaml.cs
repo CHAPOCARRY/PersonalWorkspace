@@ -11,7 +11,7 @@ public sealed partial class TrackerWorkspaceView : UserControl
     private bool synchronizing;
     public TrackerWorkspaceView()
     {
-        InitializeComponent(); DataContextChanged += (_, _) => Attach(); Loaded += (_, _) => Attach();
+        InitializeComponent(); AnalyticsExpander.RegisterPropertyChangedCallback(Expander.IsExpandedProperty, async (_, _) => { if (AnalyticsExpander.IsExpanded && model?.Analytics is { } analytics) await analytics.OpenAsync(); }); DataContextChanged += (_, _) => Attach(); Loaded += (_, _) => Attach();
         Unloaded += (_, _) => { if (model is not null) model.PropertyChanged -= Changed; model = null; };
     }
     private void Attach()

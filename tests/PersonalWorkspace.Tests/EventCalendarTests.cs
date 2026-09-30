@@ -52,6 +52,7 @@ public sealed class EventCalendarTests : IAsyncLifetime
     [InlineData(5, "Create task values", "B64535E5C550347DDDDA4AC83C8017D4ED8141FDD5AA7F202AAF0D1D4BBE6710")]
     [InlineData(6, "Create task recurrence and occurrences", "10CA1A3AF71EA2DBFF1FB3CDE79E812B16ED5F9E87C05D7C36FF2285A8B38889")]
     [InlineData(7, "Create occurrence carry calculations", "F9172FB738A35FCE74A41ADDB19F80E7DCBD96326468B3A6864D58F7FFC6BF1D")]
+    [InlineData(8, "Create trackers and entries", "015CE5A481DFB9452B027D6CD59A71EAFFC9671BD0F3FF9F5C104E1EB152E582")]
     public void ShippedWorkspaceMigrationsRemainUnchanged(int version, string name, string expectedHash)
     {
         var migration = WorkspaceMigrationCatalog.All.Single(migration => migration.Version == version);
