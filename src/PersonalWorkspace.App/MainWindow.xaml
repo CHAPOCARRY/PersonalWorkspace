@@ -62,6 +62,7 @@
                         <views:TrackerListView DataContext="{Binding Trackers}" />
                     </Grid>
                 </Grid>
+                <Grid Visibility="{Binding ShowPages, Converter={StaticResource BoolVisibility}}"><views:PageWorkspaceView DataContext="{Binding Pages}" /></Grid>
                 <Grid Visibility="{Binding ShowJournals, Converter={StaticResource BoolVisibility}}">
                     <views:JournalWorkspaceView DataContext="{Binding Journals}" />
                 </Grid>

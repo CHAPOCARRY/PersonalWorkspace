@@ -1,0 +1,53 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.PageWorkspaceView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space12}" ColumnSpacing="{StaticResource Space24}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <StackPanel Grid.ColumnSpan="2" Spacing="{StaticResource Space8}">
+            <TextBlock Text="Pages" Style="{StaticResource PageTitleStyle}"/>
+            <TextBlock Text="{Binding Error}" Foreground="{ThemeResource Danger}" AutomationProperties.AutomationId="PageError" AutomationProperties.LiveSetting="Polite" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                <Button Content="New Page" Command="{Binding NewPageCommand}" IsEnabled="{Binding IsIdle}"/>
+                <ComboBox ItemsSource="{Binding Collections}" SelectedItem="{Binding Collection, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="PageCollection" AutomationProperties.Name="Page collection"/>
+            </StackPanel>
+        </StackPanel>
+        <Grid Grid.Row="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <TextBlock Text="No Pages here yet." Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" Style="{StaticResource BodyStyle}"/>
+            <ListView x:Name="PageTree" Grid.Row="1" ItemsSource="{Binding Rows}" SelectionMode="None" IsItemClickEnabled="False" AutomationProperties.AutomationId="PageTree">
+                <ListView.ItemTemplate><DataTemplate><Grid Tag="{Binding}" Loaded="OnRowLoaded" ColumnSpacing="{StaticResource Space4}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Button Content="{Binding Expanded}" Tag="{Binding}" Click="OnToggle" Visibility="{Binding HasChildren, Converter={StaticResource BoolVisibility}}" AutomationProperties.Name="{Binding ToggleLabel}"/>
+                    <Button Grid.Column="1" Tag="{Binding}" Click="OnOpen" Style="{StaticResource TaskTitleButtonStyle}" AutomationProperties.Name="{Binding Title}"><StackPanel><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Context}" Style="{StaticResource BodyStyle}" TextWrapping="Wrap"/></StackPanel></Button>
+                </Grid></DataTemplate></ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+        <ScrollViewer Grid.Row="1" Grid.Column="1" HorizontalContentAlignment="Stretch" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="{StaticResource Space16}">
+                <TextBlock Text="{Binding Heading}" Style="{StaticResource PageTitleStyle}" AutomationProperties.AutomationId="PageHeading"/>
+                <ItemsControl ItemsSource="{Binding Breadcrumbs}" Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Title}" Tag="{Binding}" Click="OnOpen" ToolTipService.ToolTip="Open ancestor Page"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <TextBlock Text="{Binding Context}" TextWrapping="Wrap" Style="{StaticResource BodyStyle}"/>
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}" Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}">
+                    <Button Content="New child Page" Command="{Binding NewChildCommand}" IsEnabled="{Binding CanCreateChild}"/>
+                    <Button Content="Page actions" Tag="{Binding DetailRow}" IsEnabled="{Binding IsIdle}"><Button.Flyout><MenuFlyout Opening="OnActionsOpening"/></Button.Flyout></Button>
+                </StackPanel>
+                <Expander Header="Page details" Visibility="{Binding ShowEditor, Converter={StaticResource BoolVisibility}}" IsExpanded="{Binding IsCreating}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><ContentControl IsEnabled="{Binding CanEdit}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space8}">
+                    <TextBox Header="Title" Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="PageTitle" MaxLength="200"/>
+                    <ComboBox Header="Icon" ItemsSource="{Binding Icons}" SelectedItem="{Binding Icon, Mode=TwoWay}" AutomationProperties.AutomationId="PageIcon"/>
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}"><Button Content="Save Page" Command="{Binding SaveCommand}" AutomationProperties.AutomationId="SavePage"/><Button Content="Cancel" Command="{Binding CancelCommand}" Visibility="{Binding IsCreating, Converter={StaticResource BoolVisibility}}"/></StackPanel>
+                <StackPanel Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}"><TextBlock Text="Created" Style="{StaticResource BodyStyle}"/><TextBlock Text="{Binding Created}" Style="{StaticResource BodyStyle}" AutomationProperties.Name="Created"/><TextBlock Text="Last modified" Style="{StaticResource BodyStyle}"/><TextBlock Text="{Binding Modified}" Style="{StaticResource BodyStyle}" AutomationProperties.Name="Last modified"/></StackPanel></StackPanel></ContentControl></Expander>
+                <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="Save title/icon changes before navigating." Style="{StaticResource BodyStyle}"/>
+
+                    <Expander Header="Move and organize" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsEnabled="{Binding CanEdit}"><StackPanel Spacing="{StaticResource Space8}">
+                        <ComboBox Header="Parent Page" ItemsSource="{Binding ParentChoices}" SelectedItem="{Binding ParentChoice, Mode=TwoWay}" DisplayMemberPath="Label" AutomationProperties.AutomationId="PageParent"/>
+                        <Button Content="Move Page" Command="{Binding MoveCommand}"/>
+                        <TextBlock Text="Moves append to the chosen sibling group. Page actions provide Up/Down ordering." Style="{StaticResource BodyStyle}" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding Assignments}"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding ActionDescription}" Tag="{Binding}" Click="OnAssign" HorizontalAlignment="Left"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    </StackPanel></Expander>
+                    <TextBlock Text="Child Pages" FontSize="{StaticResource SectionTitle}"/>
+                    <ItemsControl ItemsSource="{Binding Children}"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Label}" Tag="{Binding}" Click="OnOpen" Style="{StaticResource TaskTitleButtonStyle}"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    <Border Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="1" Padding="{StaticResource CardPadding}" CornerRadius="{StaticResource CardRadius}"><TextBlock Text="This page is ready for content." Style="{StaticResource BodyStyle}"/></Border>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
