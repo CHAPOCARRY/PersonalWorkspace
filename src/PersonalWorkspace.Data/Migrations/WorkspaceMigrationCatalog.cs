@@ -230,6 +230,7 @@ public static class WorkspaceMigrationCatalog
             CREATE INDEX IX_TrackerEntries_Date ON TrackerEntries(TrackerId, LocalDate, LocalTime, CreatedAtUtc, Id);
             """),
         JournalMigration.Definition,
-        PageMigration.Definition
+        PageMigration.Definition,
+        CanvasMigration.Definition
     ];
 }

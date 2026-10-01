@@ -32,11 +32,14 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
     private PageIcon icon;
     private PageParentChoice? parentChoice;
     private string? error;
-    public PageWorkspaceViewModel(IPageService service, IOrganizationService organization, ICurrentProfile current, INavigationService navigation, ILogger<PageWorkspaceViewModel> logger)
+    public CanvasWorkspaceViewModel? Canvas { get; }
+    public PageWorkspaceViewModel(IPageService service, IOrganizationService organization, ICurrentProfile current, INavigationService navigation, ILogger<PageWorkspaceViewModel> logger, CanvasWorkspaceViewModel? canvas = null)
     {
         this.service = service; this.organization = organization; this.current = current; this.navigation = navigation; this.logger = logger;
+        Canvas = canvas;
+        if (Canvas is not null) Canvas.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Canvas.IsBusy)) Notify(); };
         observedProfile = current.Current?.Id;
-        navigation.Changed += (_, _) => { creating = false; Notify(); _ = ReloadAsync(); };
+        navigation.Changed += (_, _) => { Canvas?.Clear(); creating = false; Notify(); _ = ReloadAsync(); };
         current.Changed += (_, _) =>
         {
             if (observedProfile == current.Current?.Id) return;
@@ -45,7 +48,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
         };
     }
     public bool IsArea => navigation.Current.Destination == "Pages";
-    public bool IsBusy => busy || loading;
+    public bool IsBusy => busy || loading || Canvas?.IsBusy == true;
     public bool IsIdle => !IsBusy && current.Current is not null;
     public bool HasDetail => !creating && Detail is not null;
     public bool ShowEditor => creating || HasDetail;
@@ -73,6 +76,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
     public string Context => DetailRow?.Context ?? "";
     public void Clear()
     {
+        Canvas?.Clear();
         ++revision; graph = new([]); selected = createParent = null; collapsed.Clear(); collection = PageCollection.Active;
         Rows = []; Breadcrumbs = []; Children = []; Assignments = []; ParentChoices = []; ParentChoice = null;
         creating = loading = false; Title = ""; Icon = PageIcon.None; Error = null; Notify();
@@ -80,6 +84,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
     public async Task ReloadAsync()
     {
         if (!IsArea) return;
+        Canvas?.Clear();
         var request = ++revision; var profile = current.Current?.Id; loading = true; Error = null; Notify();
         try
         {
@@ -102,6 +107,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
                 Assignments = catalog.Tags.Select(t => new OrganizationChoice(reference, t.Id, OrganizationKind.Tag, t.Name, t.Color, catalog.ItemTags.Contains(new(page.Item.Id, t.Id))))
                     .Concat(catalog.Spaces.Where(s => s.ArchivedAtUtc is null || catalog.ItemSpaces.Contains(new(page.Item.Id, s.Id))).Select(s => new OrganizationChoice(reference, s.Id, OrganizationKind.Space, s.Name, s.Color, catalog.ItemSpaces.Contains(new(page.Item.Id, s.Id)), s.ArchivedAtUtc is not null))).ToArray();
                 if (!creating) { Title = page.Item.Title; Icon = page.Icon; }
+                if (!creating && Canvas is not null) await Canvas.OpenAsync(reference);
             }
         }
         catch (Exception exception) { if (request == revision) { graph = new([]); selected = null; Rows = []; Breadcrumbs = []; Children = []; Assignments = []; ParentChoices = []; Report(exception); } }
@@ -133,7 +139,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
     }
     [RelayCommand] private void NewPage() => StartCreate(null);
     [RelayCommand] private void NewChild() { if (Detail?.IsActive == true) StartCreate(Detail.Item.Id); }
-    private void StartCreate(Guid? parent) { if (!IsIdle) return; creating = true; createParent = parent; Title = ""; Icon = PageIcon.None; Error = null; Notify(); }
+    private void StartCreate(Guid? parent) { if (!IsIdle) return; Canvas?.Clear(); creating = true; createParent = parent; Title = ""; Icon = PageIcon.None; Error = null; Notify(); }
     [RelayCommand] private async Task CancelAsync() { creating = false; await ReloadAsync(); }
     [RelayCommand] private Task SaveAsync() => Run(async profile =>
     {

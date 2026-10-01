@@ -54,6 +54,7 @@ public sealed class EventCalendarTests : IAsyncLifetime
     [InlineData(7, "Create occurrence carry calculations", "F9172FB738A35FCE74A41ADDB19F80E7DCBD96326468B3A6864D58F7FFC6BF1D")]
     [InlineData(8, "Create trackers and entries", "015CE5A481DFB9452B027D6CD59A71EAFFC9671BD0F3FF9F5C104E1EB152E582")]
     [InlineData(9, "Create configurable journals", "0DE314D4377ADD150ECE195F72622C193C2523AC4646A576DD1D84E59392C561")]
+    [InlineData(10, "Create page core", "9380B4010AA67B70FD7B05C887353DCFABCCEE6EC5633C11FF311B3FE39EA277")]
     public void ShippedWorkspaceMigrationsRemainUnchanged(int version, string name, string expectedHash)
     {
         var migration = WorkspaceMigrationCatalog.All.Single(migration => migration.Version == version);
@@ -86,7 +87,7 @@ public sealed class EventCalendarTests : IAsyncLifetime
         await org.SaveAsync(context, OrganizationKind.Tag, tag, new("health"), true, clock.GetUtcNow(), default);
         await org.AssignAsync(context, item.Item.Id, OrganizationKind.Tag, tag, true, default);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(10L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(11L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(2L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE name='Events';", legacy));
         Assert.Equal(item, await taskRepository.FindAsync(context, item.Item.Id, default));
