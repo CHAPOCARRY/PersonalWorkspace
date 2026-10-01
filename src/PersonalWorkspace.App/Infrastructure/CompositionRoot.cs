@@ -34,6 +34,9 @@ internal static class CompositionRoot
         services.AddSingleton<TrackerAnalyticsViewModel>();
         services.AddSingleton<TrackerWorkspaceViewModel>();
         services.AddSingleton<IPageRepository, SqlitePageRepository>();
+        services.AddSingleton<ICanvasRepository, SqliteCanvasRepository>();
+        services.AddSingleton<ICanvasService, CanvasService>();
+        services.AddSingleton<CanvasWorkspaceViewModel>();
         services.AddSingleton<IPageService, PageService>();
         services.AddSingleton<PageWorkspaceViewModel>();
         services.AddSingleton<IJournalRepository, SqliteJournalRepository>();

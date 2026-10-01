@@ -12,6 +12,7 @@
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/JournalPresentation.cs" Link="Presentation/JournalPresentation.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/JournalWorkspaceViewModel.cs" Link="Presentation/JournalWorkspaceViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/PageWorkspaceViewModel.cs" Link="Presentation/PageWorkspaceViewModel.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/CanvasWorkspaceViewModel.cs" Link="Presentation/CanvasWorkspaceViewModel.cs" />
     <!-- Exercise UI-independent presentation state without loading WinUI in the test host. -->
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerAnalyticsViewModel.cs" Link="Presentation/TrackerAnalyticsViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerEditor.cs" Link="Presentation/TrackerEditor.cs" />
