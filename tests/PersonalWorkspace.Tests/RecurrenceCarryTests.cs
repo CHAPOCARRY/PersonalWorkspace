@@ -38,7 +38,7 @@ public sealed partial class RecurrenceTests
                 $"INSERT INTO TaskOccurrences VALUES ('{occurrence}','{task.Item.Id}','{segment}','2026-10-01','2026-10-02',1,{(type==TaskValueType.Checkbox?"NULL":"'18'")},0,1,0,'2026-10-01T00:00:00+00:00','2026-10-01T01:00:00+00:00');",legacy);
         }
         await initializer.InitializeAsync(legacy,false); await initializer.InitializeAsync(legacy,false);
-        Assert.Equal(9L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy)); Assert.Equal(6L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
+        Assert.Equal(10L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy)); Assert.Equal(6L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
         Assert.Equal(5L,await Sql("SELECT COUNT(*) FROM TaskOccurrenceCalculations WHERE BaseTarget='20' AND CarryIn='0' AND EffectiveTarget='20' AND CarryOut='0';",legacy));
         Assert.Equal(4L,await Sql("SELECT COUNT(*) FROM TaskCarrySettings WHERE CarryDeficit=0 AND CarrySurplus=0 AND HistoryLocked=1;",legacy));
         foreach(var (task,id) in identities)

@@ -71,7 +71,7 @@ public sealed class TaskValueTests : IAsyncLifetime
         var repo = new SqliteTaskRepository(); await repo.CreateAsync(context, parent, default); await repo.CreateAsync(context, child, default);
         await Sql($"INSERT INTO TaskDependencies VALUES ('{parent.Item.Id:D}','{child.Item.Id:D}','{now:O}');", legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(9L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(10L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(4L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(parent, await repo.FindAsync(context, parent.Item.Id, default));
         Assert.Equal(child, await repo.FindAsync(context, child.Item.Id, default));
@@ -357,7 +357,7 @@ public sealed class TaskValueTests : IAsyncLifetime
         Assert.Equal(18m,model.ValueEditor.Build()!.Actual);
         var other=await profiles.CreateAsync("Other"); await model.ReloadAsync(); Assert.Null(model.ValueEditor.Build());
         Assert.Empty(await tasks.GetAsync(other.Id,TaskCollection.Active)); await Assert.ThrowsAsync<WorkspaceChangedException>(() => Actual(task,20));
-        await profiles.SwitchAsync(profile); await profiles.RestoreAsync(); Assert.Equal(task,await Read(task));
+        await profiles.SwitchAsync(profile); await profiles.RestoreAsync(); await model.ReloadAsync(); Assert.Equal(task,await Read(task));
     }
 
     [Fact]

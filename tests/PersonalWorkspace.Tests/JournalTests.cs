@@ -38,7 +38,7 @@ public sealed partial class TrackerTests
                 VALUES('{entry}','{tracker}',1,0,'2026-09-29','2026-09-29','12:00:00.0000000','78.2','2026-09-29T12:00:00+00:00','2026-09-29T12:00:00+00:00');
             """, legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(9L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(8L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
+        Assert.Equal(10L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(8L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal("78.2", await Sql($"SELECT Value FROM TrackerEntries WHERE Id='{entry}';", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM JournalEntries;", legacy));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync(); using var command = global.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'Journal%';"; Assert.Equal(0L, await command.ExecuteScalarAsync());
     }
