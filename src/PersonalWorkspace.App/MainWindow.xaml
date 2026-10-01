@@ -52,7 +52,8 @@
                     <views:PlaceholderView />
                 </ScrollViewer>
                 <Grid Visibility="{Binding ShowTasks, Converter={StaticResource BoolVisibility}}">
-                    <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid Grid.Row="3" MaxHeight="{StaticResource JournalListHeight}" Visibility="{Binding Journals.IsSection, Converter={StaticResource BoolVisibility}}"><views:JournalListView DataContext="{Binding Journals}" /></Grid>
                     <views:TaskWorkspaceView DataContext="{Binding Tasks}" />
                     <Grid Grid.Row="1" MaxHeight="{StaticResource EventListHeight}" Visibility="{Binding Calendar.IsEventList, Converter={StaticResource BoolVisibility}}">
                         <views:EventListView DataContext="{Binding Calendar}" />
@@ -60,6 +61,9 @@
                     <Grid Grid.Row="2" MaxHeight="{StaticResource EventListHeight}" Visibility="{Binding Trackers.IsSection, Converter={StaticResource BoolVisibility}}">
                         <views:TrackerListView DataContext="{Binding Trackers}" />
                     </Grid>
+                </Grid>
+                <Grid Visibility="{Binding ShowJournals, Converter={StaticResource BoolVisibility}}">
+                    <views:JournalWorkspaceView DataContext="{Binding Journals}" />
                 </Grid>
                 <views:TrackerWorkspaceView DataContext="{Binding Trackers}" Visibility="{Binding ShowTrackers, Converter={StaticResource BoolVisibility}}" />
                 <Grid Visibility="{Binding ShowCalendar, Converter={StaticResource BoolVisibility}}">

@@ -11,6 +11,7 @@ public sealed partial class CalendarViewModel : ObservableObject
     private readonly IEventService events;
     private readonly ITaskService tasks;
     private readonly IRecurrenceService? recurrence;
+    private readonly IJournalService? journals;
     private readonly ICurrentProfile current;
     private readonly INavigationService navigation;
     private readonly TimeProvider clock;
@@ -30,10 +31,11 @@ public sealed partial class CalendarViewModel : ObservableObject
     private EventItem? detail;
     private NavigationRoute returnRoute = new("Calendar");
 
-    public CalendarViewModel(IEventService events, ITaskService tasks, ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<CalendarViewModel> logger, IRecurrenceService? recurrence = null)
+    public CalendarViewModel(IEventService events, ITaskService tasks, ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<CalendarViewModel> logger, IRecurrenceService? recurrence = null, IJournalService? journals = null)
     {
         this.events = events; this.tasks = tasks; this.current = current; this.navigation = navigation; this.clock = clock; this.logger = logger;
         this.recurrence = recurrence;
+        this.journals = journals;
         selectedDate = Today;
         observedProfile = current.Current?.Id;
         navigation.Changed += (_, _) => { Notify(); _ = ReloadAsync(); };
@@ -41,7 +43,7 @@ public sealed partial class CalendarViewModel : ObservableObject
         {
             if (observedProfile == current.Current?.Id) return;
             observedProfile = current.Current?.Id; ++revision;
-            Days = []; Unscheduled = []; EventRows = []; detail = null; editorReference = null; editorProfile = null;
+            Days = []; Unscheduled = []; EventRows = []; JournalRows = []; detail = null; editorReference = null; editorProfile = null;
             EditorTitle = ""; StartDate = EndDate = null; StartTime = EndTime = null; Error = null;
             selectedDate = Today; returnRoute = new("Calendar"); Notify();
             if (IsEditor) navigation.Navigate(new("Calendar")); else _ = ReloadAsync();
@@ -67,6 +69,7 @@ public sealed partial class CalendarViewModel : ObservableObject
         : $"{VisibleRange.From:d} – {VisibleRange.Through:d}";
     public (DateOnly From, DateOnly Through) VisibleRange => CalendarPeriods.Range(selectedDate, Mode, CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek);
     public IReadOnlyList<CalendarDay> Days { get; private set; } = [];
+    public IReadOnlyList<JournalSummaryRow> JournalRows { get; private set; } = [];
     public IReadOnlyList<CalendarEntry> Unscheduled { get; private set; } = [];
     public IReadOnlyList<CalendarEntry> EventRows { get; private set; } = [];
     public bool HasNoEvents => EventRows.Count == 0;
@@ -99,6 +102,9 @@ public sealed partial class CalendarViewModel : ObservableObject
                 if (request != revision) return;
                 var occurrences = recurrence is null ? Array.Empty<OccurrenceItem>() : await recurrence.GetRangeAsync(profile.Value,range.From,range.Through);
                 if(request!=revision)return;
+                var journalSnapshot = Mode == CalendarMode.Day && journals is not null ? await journals.GetAsync(profile.Value, date: selectedDate) : null;
+                if (request != revision) return;
+                JournalRows = journalSnapshot is null ? [] : JournalPresentation.Rows(profile.Value, selectedDate, journalSnapshot);
                 var now = LocalNow;
                 Days = Enumerable.Range(range.From.DayNumber, range.Through.DayNumber - range.From.DayNumber + 1).Select(number =>
                 {
@@ -138,11 +144,12 @@ public sealed partial class CalendarViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            if (request == revision) { Days = []; Unscheduled = []; EventRows = []; editorProfile = null; editorReference = null; detail = null; Report(exception); }
+            if (request == revision) { Days = []; Unscheduled = []; EventRows = []; JournalRows = []; editorProfile = null; editorReference = null; detail = null; Report(exception); }
         }
         finally { if (request == revision) { loading = false; Notify(); } }
     }
     public Task RefreshClockAsync() => !IsBusy && (IsCalendar || navigation.Current.Destination == "Today") ? ReloadAsync() : Task.CompletedTask;
+    [RelayCommand] private void OpenJournal(JournalSummaryRow row) { if (row.ProfileId == current.Current?.Id) navigation.Navigate(new("Journal", $"{row.Journal.Item.Id:D}|{row.Date:yyyy-MM-dd}")); }
     public void ReportDragFailure(Exception exception)
     {
         logger.LogWarning(exception, "Native Calendar drag could not start");

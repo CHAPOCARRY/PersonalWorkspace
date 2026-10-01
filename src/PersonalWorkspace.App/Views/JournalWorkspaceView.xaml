@@ -1,0 +1,74 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.JournalWorkspaceView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer Padding="{StaticResource ContentPadding}" HorizontalContentAlignment="Stretch">
+        <StackPanel Spacing="{StaticResource Space16}" MaxWidth="{StaticResource TaskDetailWidth}">
+            <TextBlock Text="{Binding Heading}" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="{Binding Error}" Foreground="{ThemeResource Danger}" Style="{StaticResource BodyStyle}" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="JournalError" />
+            <TextBlock Text="{Binding Message}" Foreground="{ThemeResource Success}" AutomationProperties.AutomationId="JournalMessage" />
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                <ComboBox x:Name="JournalPicker" Header="Journal" ItemsSource="{Binding Rows}" DisplayMemberPath="Title" SelectionChanged="OnJournalChanged" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="JournalSelector" />
+                <Button Content="+ Journal" Command="{Binding NewJournalCommand}" VerticalAlignment="Bottom" IsEnabled="{Binding IsIdle}" />
+                <Button Content="Configure Journal" Command="{Binding ConfigureCommand}" VerticalAlignment="Bottom" Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}" />
+                <Button Content="Journal actions" Tag="{Binding DetailRow}" VerticalAlignment="Bottom" Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding IsIdle}"><Button.Flyout><MenuFlyout Opening="OnActionsOpening" /></Button.Flyout></Button>
+            </StackPanel>
+            <TextBlock Text="Create a Journal, then add the fields that suit your day." Style="{StaticResource BodyStyle}" Visibility="{Binding HasNoJournals, Converter={StaticResource BoolVisibility}}" />
+            <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding ShowEntry, Converter={StaticResource BoolVisibility}}">
+                <TextBlock Text="{Binding Description}" Style="{StaticResource BodyStyle}" />
+                <ContentControl IsEnabled="{Binding IsIdle}"><StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+                    <Button Content="Previous day" Command="{Binding PreviousCommand}" VerticalAlignment="Bottom" />
+                    <Button Content="Today" Command="{Binding GoTodayCommand}" VerticalAlignment="Bottom" AutomationProperties.AutomationId="JournalToday" />
+                    <Button Content="Next day" Command="{Binding NextCommand}" VerticalAlignment="Bottom" />
+                    <CalendarDatePicker x:Name="DayPicker" Header="Entry date" DateChanged="OnDateChanged" AutomationProperties.AutomationId="JournalDate" />
+                </StackPanel></ContentControl>
+                <TextBlock Text="{Binding EntryState}" Style="{StaticResource BodyStyle}" AutomationProperties.AutomationId="JournalEntryState" />
+                <TextBlock Text="Save before changing dates, Journals or configuration. Unsaved changes are discarded when you navigate." Style="{StaticResource BodyStyle}" />
+                <ContentControl IsEnabled="{Binding CanSaveEntry}" HorizontalContentAlignment="Stretch"><StackPanel x:Name="EntryFields" Spacing="{StaticResource Space16}" /></ContentControl>
+                <Button Content="Save entry" Command="{Binding SaveEntryCommand}" IsEnabled="{Binding CanSaveEntry}" AutomationProperties.AutomationId="SaveJournalEntry" />
+            </StackPanel>
+            <ContentControl Visibility="{Binding ShowDefinition, Converter={StaticResource BoolVisibility}}" IsEnabled="{Binding CanConfigure}" HorizontalContentAlignment="Stretch"><StackPanel Spacing="{StaticResource Space12}">
+                <TextBox Header="Name" Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="JournalName" />
+                <TextBox Header="Description (optional)" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" AutomationProperties.AutomationId="JournalDescription" />
+                <Button Content="Save Journal" Command="{Binding SaveDefinitionCommand}" AutomationProperties.AutomationId="SaveJournalDefinition" />
+                <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding HasDetail, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="Fields" FontSize="{StaticResource SectionTitle}" />
+                    <ItemsControl ItemsSource="{Binding Fields}"><ItemsControl.ItemTemplate><DataTemplate>
+                        <Grid ColumnSpacing="{StaticResource Space8}" Padding="{StaticResource TaskRowPadding}"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <Button Grid.Column="1" Content="Edit field" Tag="{Binding}" Click="OnEditField" />
+                            <Button Grid.Column="2" Content="Up" Tag="{Binding}" Click="OnUp" />
+                            <Button Grid.Column="3" Content="Down" Tag="{Binding}" Click="OnDown" />
+                            <Button Grid.Column="4" Content="Delete field" Tag="{Binding}" Click="OnDeleteField" />
+                        </Grid>
+                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    <Button Content="New field" Command="{Binding NewFieldCommand}" />
+                    <Border Padding="{StaticResource CardPadding}" Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="1" CornerRadius="{StaticResource CardRadius}">
+                        <StackPanel Spacing="{StaticResource Space12}">
+                            <TextBox Header="Field name" Text="{Binding FieldEditor.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="JournalFieldName" />
+                            <ComboBox Header="Field type" ItemsSource="{Binding FieldEditor.Types}" SelectedItem="{Binding FieldEditor.Type, Mode=TwoWay}" AutomationProperties.AutomationId="JournalFieldType" />
+                            <TextBlock Text="After first use, type, currency and scale bounds are fixed. Used options may be renamed but cannot be removed." Style="{StaticResource BodyStyle}" />
+                            <TextBox Header="Currency code" Text="{Binding FieldEditor.Currency, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding FieldEditor.IsCurrency, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="JournalFieldCurrency" />
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}" Visibility="{Binding FieldEditor.IsScale, Converter={StaticResource BoolVisibility}}">
+                                <TextBox Header="Scale minimum" Text="{Binding FieldEditor.Minimum, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="JournalFieldMinimum" />
+                                <TextBox Header="Scale maximum" Text="{Binding FieldEditor.Maximum, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="JournalFieldMaximum" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource Space8}" Visibility="{Binding FieldEditor.IsOptions, Converter={StaticResource BoolVisibility}}">
+                                <ItemsControl ItemsSource="{Binding FieldEditor.Options}"><ItemsControl.ItemTemplate><DataTemplate>
+                                    <Grid ColumnSpacing="{StaticResource Space8}"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBox Header="Option" Text="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="JournalOptionLabel" />
+                                        <Button Grid.Column="1" Content="Up" Tag="{Binding}" Click="OnOptionUp" VerticalAlignment="Bottom" />
+                                        <Button Grid.Column="2" Content="Down" Tag="{Binding}" Click="OnOptionDown" VerticalAlignment="Bottom" />
+                                        <Button Grid.Column="3" Content="Remove option" Tag="{Binding}" Click="OnRemoveOption" VerticalAlignment="Bottom" />
+                                    </Grid>
+                                </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                                <Button Content="Add option" Command="{Binding AddOptionCommand}" />
+                            </StackPanel>
+                            <Button Content="Save field" Command="{Binding SaveFieldCommand}" AutomationProperties.AutomationId="SaveJournalField" />
+                        </StackPanel>
+                    </Border>
+                    <Expander Header="Tags and spaces" HorizontalAlignment="Stretch"><ItemsControl ItemsSource="{Binding Assignments}"><ItemsControl.ItemTemplate><DataTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space12}"><TextBlock Text="{Binding Label}" /><Button Content="{Binding ActionLabel}" Tag="{Binding}" Click="OnAssign" AutomationProperties.Name="{Binding ActionDescription}" /></StackPanel>
+                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
+                </StackPanel>
+            </StackPanel></ContentControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

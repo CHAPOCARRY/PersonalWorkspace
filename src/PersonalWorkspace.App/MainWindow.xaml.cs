@@ -22,7 +22,7 @@ public sealed partial class MainWindow : Window
         RefreshSpaces();
         windowState.Attach(this, viewModel);
         var todayTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-        todayTimer.Tick += async (_, _) => { await viewModel.Tasks.RefreshTodayIfNeededAsync(); await viewModel.Calendar.RefreshClockAsync(); await viewModel.Trackers.RefreshClockAsync(); };
+        todayTimer.Tick += async (_, _) => { await viewModel.Tasks.RefreshTodayIfNeededAsync(); await viewModel.Calendar.RefreshClockAsync(); await viewModel.Trackers.RefreshClockAsync(); await viewModel.Journals.RefreshClockAsync(); };
         todayTimer.Start();
         Closed += (_, _) => todayTimer.Stop();
         Closed += (_, _) => viewModel.PropertyChanged -= OnViewModelChanged;

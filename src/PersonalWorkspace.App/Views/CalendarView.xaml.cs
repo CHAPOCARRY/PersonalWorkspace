@@ -78,6 +78,15 @@ public sealed partial class CalendarView : UserControl
             else
             {
                 AddSection(panel, "Tasks", day.Tasks); AddSection(panel, "All day", day.AllDayEvents); AddSection(panel, "Events", day.TimedEvents);
+                if (model.Mode == CalendarMode.Day)
+                {
+                    panel.Children.Add(new TextBlock { Text = "Journal", Style = (Style)Application.Current.Resources["BodyStyle"] });
+                    foreach (var journal in model.JournalRows)
+                    {
+                        var button = new Button { Content = new TextBlock { Text = journal.Title + " · " + journal.Summary, TextWrapping = TextWrapping.Wrap, MaxLines = 2 }, Command = model.OpenJournalCommand, CommandParameter = journal, Style = (Style)Application.Current.Resources["TaskTitleButtonStyle"] };
+                        AutomationProperties.SetName(button, "Open Journal " + journal.Title + " · " + journal.Summary); panel.Children.Add(button);
+                    }
+                }
             }
             var cell = new Border { Child = panel, Padding = new Thickness(Number("Space8")), BorderThickness = new Thickness(1),
                 BorderBrush = Brush(day.IsToday ? "Accent" : "Border"), Background = Brush(day.InMonth || model.Mode != CalendarMode.Month ? "Surface" : "SurfaceSecondary"),

@@ -26,14 +26,16 @@ public sealed partial class ShellViewModel : ObservableObject
     public OrganizationViewModel Organization { get; }
     public CalendarViewModel Calendar { get; }
     public TrackerWorkspaceViewModel Trackers { get; }
+    public JournalWorkspaceViewModel Journals { get; }
+    public bool ShowJournals => Profiles.ShowPlaceholder && Journals.IsArea;
     public bool ShowTrackers => Profiles.ShowPlaceholder && Trackers.IsArea;
     public bool ShowCalendar => Profiles.ShowPlaceholder && Calendar.IsCalendarArea;
     public Guid? ActiveSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
     public bool ShowOrganization => Profiles.ShowPlaceholder && navigation.Current.Destination == "Organization";
-    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea && !Trackers.IsArea;
+    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea && !Trackers.IsArea && !Journals.IsArea;
     public bool ShowTasks => Profiles.ShowPlaceholder && Tasks.IsTaskArea;
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar, TrackerWorkspaceViewModel trackers)
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar, TrackerWorkspaceViewModel trackers, JournalWorkspaceViewModel journals)
     {
         this.settings = settings;
         this.navigation = navigation;
@@ -42,7 +44,7 @@ public sealed partial class ShellViewModel : ObservableObject
         Tasks = tasks;
         Organization = organization;
         Calendar = calendar;
-        Trackers = trackers;
+        Trackers = trackers; Journals = journals;
         Profiles.PropertyChanged += (_, _) => NotifyContent();
         Tasks.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Tasks.IsTaskArea)) NotifyContent(); };
         navigation.Changed += (_, _) => UpdateDestination();
@@ -56,6 +58,7 @@ public sealed partial class ShellViewModel : ObservableObject
         await Organization.ReloadAsync();
         await Calendar.ReloadAsync();
         await Trackers.ReloadAsync();
+        await Journals.ReloadAsync();
     }
 
     public void Navigate(string destination)
@@ -111,6 +114,7 @@ public sealed partial class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowOrganization));
         OnPropertyChanged(nameof(ShowCalendar));
         OnPropertyChanged(nameof(ShowTrackers));
+        OnPropertyChanged(nameof(ShowJournals));
     }
 
     public void ReportError(string message) => ErrorMessage = message;

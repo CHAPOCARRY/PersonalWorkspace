@@ -9,6 +9,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1"><PrivateAssets>all</PrivateAssets></PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/JournalPresentation.cs" Link="Presentation/JournalPresentation.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/JournalWorkspaceViewModel.cs" Link="Presentation/JournalWorkspaceViewModel.cs" />
     <!-- Exercise UI-independent presentation state without loading WinUI in the test host. -->
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerAnalyticsViewModel.cs" Link="Presentation/TrackerAnalyticsViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TrackerEditor.cs" Link="Presentation/TrackerEditor.cs" />

@@ -85,7 +85,7 @@ public sealed class EventCalendarTests : IAsyncLifetime
         await org.SaveAsync(context, OrganizationKind.Tag, tag, new("health"), true, clock.GetUtcNow(), default);
         await org.AssignAsync(context, item.Item.Id, OrganizationKind.Tag, tag, true, default);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(8L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(9L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(2L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE name='Events';", legacy));
         Assert.Equal(item, await taskRepository.FindAsync(context, item.Item.Id, default));

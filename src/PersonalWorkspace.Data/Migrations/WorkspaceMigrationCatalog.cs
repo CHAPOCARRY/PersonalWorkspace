@@ -228,6 +228,7 @@ public static class WorkspaceMigrationCatalog
             CREATE UNIQUE INDEX IX_TrackerEntries_Single ON TrackerEntries(TrackerId, PeriodDate) WHERE EntryMode = 0;
             CREATE INDEX IX_TrackerEntries_Period ON TrackerEntries(TrackerId, PeriodDate, LocalDate, LocalTime, CreatedAtUtc, Id);
             CREATE INDEX IX_TrackerEntries_Date ON TrackerEntries(TrackerId, LocalDate, LocalTime, CreatedAtUtc, Id);
-            """)
+            """),
+        JournalMigration.Definition
     ];
 }
