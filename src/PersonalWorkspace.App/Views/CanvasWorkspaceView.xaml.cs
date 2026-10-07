@@ -54,11 +54,16 @@ public sealed partial class CanvasWorkspaceView : UserControl
             }
             LockButton.Content = model.Locked ? "Unlock Layout" : "Lock Layout"; LockButton.IsEnabled = model.CanConfigure;
             AddBlock.IsEnabled = AddContainer.IsEnabled = model.CanEdit; ZoomLabel.Content = model.Zoom + "%";
-            StatusText.Text = model.Status; StatusText.Foreground = Brush(model.Error is null ? "TextSecondary" : "Danger");
+            AddWidgetButton.IsEnabled = model.CanEdit && model.Widgets is not null;
+            StatusText.Text = model.Widgets?.Error ?? model.Status; StatusText.Foreground = Brush(model.Error is null && model.Widgets?.Error is null ? "TextSecondary" : "Danger");
             EmptyText.Visibility = model.HasPage && model.DisplayItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             SelectionTools.Visibility = model.Selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             DeleteButton.IsEnabled = model.CanEdit;
             var single = model.Selection.Count == 1 ? model.DisplayItems.SingleOrDefault(i => model.Selection.Contains(i.Id)) : null;
+            var widgetRows = model.Widgets?.Rows.ToDictionary(r => r.Widget.CanvasItemId) ?? [];
+            SetContentButton.Visibility = single?.Kind == CanvasKind.Block && !widgetRows.ContainsKey(single.Id) ? Visibility.Visible : Visibility.Collapsed;
+            SetContentButton.IsEnabled = model.CanEdit;
+            DeleteButton.Content = model.Selection.Any(widgetRows.ContainsKey) ? "Remove from Page" : "Delete selected";
             Membership.Visibility = MembershipButton.Visibility = single?.Kind == CanvasKind.Block ? Visibility.Visible : Visibility.Collapsed;
             ContainerTitle.Visibility = TitleButton.Visibility = single?.Kind == CanvasKind.Container ? Visibility.Visible : Visibility.Collapsed;
             Membership.IsEnabled = MembershipButton.IsEnabled = ContainerTitle.IsEnabled = TitleButton.IsEnabled = model.CanEdit;
@@ -86,7 +91,19 @@ public sealed partial class CanvasWorkspaceView : UserControl
                 border.BorderBrush = Brush(selected ? model.PreviewValid ? "Accent" : "Danger" : "Border"); border.BorderThickness = new Thickness(selected ? 2 : 1);
                 Canvas.SetLeft(border, absolute.X); Canvas.SetTop(border, absolute.Y); Canvas.SetZIndex(border, item.Kind == CanvasKind.Container ? 0 : 1);
                 var label = item.Kind == CanvasKind.Block ? "Empty block" : item.Title.Length > 0 ? item.Title : "Container";
-                ((TextBlock)border.Child).Text = label; AutomationProperties.SetName(border, $"{label}{(selected ? ", selected" : "")}, X {item.Rect.X}, Y {item.Rect.Y}, width {item.Rect.Width}, height {item.Rect.Height}"); AutomationProperties.SetAutomationId(border, "CanvasItem_" + item.Id.ToString("N"));
+                if (widgetRows.TryGetValue(item.Id, out var row))
+                {
+                    if (border.Child is not WidgetContentView) border.Child = new WidgetContentView();
+                    var widgetView = (WidgetContentView)border.Child;
+                    widgetView.ConfigureRequested = content => _ = ConfigureWidgetAsync(content);
+                    widgetView.Bind(row, model.Widgets!, model.CanEdit); label = row.Widget.Type + ": " + row.Title;
+                }
+                else
+                {
+                    if (border.Child is not TextBlock) border.Child = new TextBlock { TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
+                    ((TextBlock)border.Child).Text = label;
+                }
+                AutomationProperties.SetName(border, $"{label}{(selected ? ", selected" : "")}, X {item.Rect.X}, Y {item.Rect.Y}, width {item.Rect.Width}, height {item.Rect.Height}"); AutomationProperties.SetAutomationId(border, "CanvasItem_" + item.Id.ToString("N"));
                 if (selected && model.Selection.Count == 1 && model.CanEdit) AddHandles(item, absolute);
             }
             if (model.IsPreview && model.Guides is { } guide && model.Selection.Count > 0)
@@ -115,6 +132,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
     private void OnItemPressed(object sender, PointerRoutedEventArgs args)
     {
         if (model is null || sender is not Border { Tag: CanvasItem item } || !args.GetCurrentPoint(Surface).Properties.IsLeftButtonPressed) return;
+        if (((Border)sender).Child is WidgetContentView widget && !widget.IsHeader(args.OriginalSource as DependencyObject)) return;
         args.Handled = true;
         if (Key(VirtualKey.Control)) { model.Select(item.Id, true); return; }
         if (!model.Selection.Contains(item.Id)) model.Select(item.Id);
@@ -129,7 +147,10 @@ public sealed partial class CanvasWorkspaceView : UserControl
         Surface.CapturePointer(args.Pointer);
     }
     private void OnSurfacePressed(object sender, PointerRoutedEventArgs args)
-    { if (args.GetCurrentPoint(Surface).Properties.IsLeftButtonPressed) { model?.Select(null); Focus(FocusState.Programmatic); args.Handled = true; } }
+    {
+        for (var node = args.OriginalSource as DependencyObject; node is not null && node != Surface; node = VisualTreeHelper.GetParent(node)) if (node is WidgetContentView) return;
+        if (args.GetCurrentPoint(Surface).Properties.IsLeftButtonPressed) { model?.Select(null); Focus(FocusState.Programmatic); args.Handled = true; }
+    }
     private void OnPointerMoved(object sender, PointerRoutedEventArgs args)
     {
         if (dragging is not { } id || original is null || model is null) return;
@@ -148,7 +169,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
     {
         if (model is null) return;
         for (var focus = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject; focus is not null; focus = VisualTreeHelper.GetParent(focus))
-            if (focus is TextBox or ComboBox) return;
+            if (focus is TextBox or ComboBox or WidgetContentView) return;
         if (args.Key == VirtualKey.Escape) { Cancel(); model.Select(null); args.Handled = true; }
         else if (args.Key == VirtualKey.Delete && model.CanEdit) { await model.DeleteAsync(); args.Handled = true; }
         else if (model.CanEdit && model.Selection.Count > 0 && args.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Up or VirtualKey.Down)

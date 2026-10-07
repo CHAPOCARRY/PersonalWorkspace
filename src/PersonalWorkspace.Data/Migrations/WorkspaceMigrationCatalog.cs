@@ -231,6 +231,7 @@ public static class WorkspaceMigrationCatalog
             """),
         JournalMigration.Definition,
         PageMigration.Definition,
-        CanvasMigration.Definition
+        CanvasMigration.Definition,
+        WidgetMigration.Definition
     ];
 }

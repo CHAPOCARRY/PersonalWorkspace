@@ -93,6 +93,8 @@ public interface IRecurrenceRepository
 }
 public interface IRecurrenceService
 {
+    // Read existing executions only; rendering a reference does not materialize a schedule.
+    Task<IReadOnlyList<OccurrenceItem>> ReadDayAsync(Guid profile, DateOnly date, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OccurrenceItem>> GetRangeAsync(Guid profile, DateOnly from, DateOnly through, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OccurrenceItem>> GetHistoryAsync(TaskReference task, DateOnly from, DateOnly through, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RecurrenceSegment>> GetSegmentsAsync(TaskReference task, CancellationToken cancellationToken = default);

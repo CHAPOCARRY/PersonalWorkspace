@@ -5,6 +5,7 @@
             <Button x:Name="LockButton" Click="OnLock" AutomationProperties.AutomationId="CanvasLock"/>
             <Button x:Name="AddBlock" Content="+ Block" Click="OnAddBlock" AutomationProperties.AutomationId="CanvasAddBlock"/>
             <Button x:Name="AddContainer" Content="+ Container" Click="OnAddContainer" AutomationProperties.AutomationId="CanvasAddContainer"/>
+            <Button x:Name="AddWidgetButton" Content="+ Widget" Click="OnAddWidget" AutomationProperties.AutomationId="CanvasAddWidget" AutomationProperties.Name="Add Widget"/>
             <Button Content="−" Click="OnZoomOut" IsEnabled="{Binding CanConfigure}" AutomationProperties.Name="Zoom out"/>
             <Button x:Name="ZoomLabel" Click="OnZoomReset" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="CanvasZoom" AutomationProperties.Name="Reset zoom to 100%"/>
             <Button Content="+" Click="OnZoomIn" IsEnabled="{Binding CanConfigure}" AutomationProperties.Name="Zoom in"/>
@@ -13,6 +14,7 @@
             <Button x:Name="DeleteButton" Content="Delete selected" Click="OnDelete" AutomationProperties.AutomationId="CanvasDelete"/>
             <ComboBox x:Name="Membership" Width="180" DisplayMemberPath="Label" PlaceholderText="Move block to…" AutomationProperties.AutomationId="CanvasMembership" AutomationProperties.Name="Block destination"/>
             <Button x:Name="MembershipButton" Content="Move into / out" Click="OnMembership"/>
+            <Button x:Name="SetContentButton" Content="Set content" Click="OnSetContent" AutomationProperties.AutomationId="CanvasSetContent"/>
             <TextBox x:Name="ContainerTitle" PlaceholderText="Container title" MaxLength="120" Width="140" AutomationProperties.AutomationId="CanvasContainerTitle"/>
             <Button x:Name="TitleButton" Content="Rename" Click="OnRename"/>
         </StackPanel>
@@ -26,7 +28,7 @@
                         </Canvas>
                     </Canvas>
                 </ScrollViewer>
-                <TextBlock x:Name="EmptyText" Text="This page is empty. Unlock Layout and add a block or Container." Style="{StaticResource BodyStyle}" Margin="{StaticResource CardPadding}" VerticalAlignment="Top" IsHitTestVisible="False"/>
+                <TextBlock x:Name="EmptyText" Text="This page is empty. Unlock Layout and add a Widget, block or Container." Style="{StaticResource BodyStyle}" Margin="{StaticResource CardPadding}" VerticalAlignment="Top" IsHitTestVisible="False"/>
             </Grid>
         </Border>
     </Grid>
