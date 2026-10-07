@@ -73,7 +73,7 @@ public sealed partial class TrackerTests : IAsyncLifetime
             INSERT INTO TaskOccurrenceCalculations VALUES('{occurrence}','20','0','20','2');
             """, legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(11L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(7L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal("18", await Sql($"SELECT Actual FROM TaskOccurrences WHERE Id='{occurrence}';", legacy));
         Assert.Equal("2", await Sql($"SELECT CarryOut FROM TaskOccurrenceCalculations WHERE OccurrenceId='{occurrence}';", legacy));

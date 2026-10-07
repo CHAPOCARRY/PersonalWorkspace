@@ -26,7 +26,7 @@ public sealed partial class TrackerTests
         var a = Guid.NewGuid(); var b = Guid.NewGuid();
         await Sql($"INSERT INTO WorkspaceItems VALUES('{a}',5,'Training','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00',NULL,NULL);INSERT INTO WorkspaceItems VALUES('{b}',5,'Goals','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00',NULL,NULL);INSERT INTO Pages VALUES('{a}',NULL,0,NULL);INSERT INTO Pages VALUES('{b}','{a}',0,2);", legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(11L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(10L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy)); Assert.Equal(a.ToString(), await Sql($"SELECT ParentPageId FROM Pages WHERE ItemId='{b}';", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM PageCanvasItems;", legacy));
+        Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(10L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy)); Assert.Equal(a.ToString(), await Sql($"SELECT ParentPageId FROM Pages WHERE ItemId='{b}';", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM PageCanvasItems;", legacy));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync(); using var command = global.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'PageCanvas%';"; Assert.Equal(0L, await command.ExecuteScalarAsync());
     }
     [Fact]

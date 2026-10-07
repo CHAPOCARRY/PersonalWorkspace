@@ -11,7 +11,7 @@ public sealed class SqliteCanvasRepository : ICanvasRepository
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token); using var transaction = connection.BeginTransaction(deferred: true);
         var snapshot = await Read(connection, transaction, pageId, token); await transaction.CommitAsync(token); return snapshot;
     }
-    private static async Task<CanvasSnapshot> Read(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, CancellationToken token)
+    internal static async Task<CanvasSnapshot> Read(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, CancellationToken token)
     {
         bool active;
         using (var command = Command(connection, transaction, "SELECT w.ArchivedAtUtc IS NULL AND w.DeletedAtUtc IS NULL FROM Pages p JOIN WorkspaceItems w ON w.Id=p.ItemId WHERE p.ItemId=$page;", pageId))
@@ -28,6 +28,12 @@ public sealed class SqliteCanvasRepository : ICanvasRepository
     {
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token); using var transaction = connection.BeginTransaction(deferred: false);
         var before = await Read(connection, transaction, pageId, token); var after = edit(before);
+        await Write(connection, transaction, pageId, before, after, token);
+        await transaction.CommitAsync(token); return after;
+    }
+    // Shared transaction boundary for operations that attach content to generic layout items.
+    internal static async Task Write(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, CanvasSnapshot before, CanvasSnapshot after, CancellationToken token)
+    {
         if (after.PageId != pageId) throw new InvalidOperationException("Canvas ownership cannot change.");
         if (after.Settings != before.Settings)
         {
@@ -50,7 +56,6 @@ public sealed class SqliteCanvasRepository : ICanvasRepository
         }
         foreach (var id in original.Keys.Except(after.Items.Select(i => i.Id)))
         { using var command = Command(connection, transaction, "DELETE FROM PageCanvasItems WHERE Id=$id AND PageId=$page;", pageId); Add(command, "$id", id); await command.ExecuteNonQueryAsync(token); }
-        await transaction.CommitAsync(token); return after;
     }
     private static SqliteCommand Command(SqliteConnection connection, SqliteTransaction transaction, string sql, Guid page)
     { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; Add(command, "$page", page); return command; }

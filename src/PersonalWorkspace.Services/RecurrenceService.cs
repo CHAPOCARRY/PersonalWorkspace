@@ -8,6 +8,10 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
     TimeProvider clock, ILogger<RecurrenceService> logger) : IRecurrenceService
 {
     private DateOnly Today => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+    public Task<IReadOnlyList<OccurrenceItem>> ReadDayAsync(Guid profile, DateOnly date, CancellationToken cancellationToken = default) =>
+        RunAsync<IReadOnlyList<OccurrenceItem>>(profile, new(From: date, Through: date), state => state.Occurrences.Values
+            .Where(o => o.OccurrenceDate == date && !o.IsSuppressed && !o.IsSkipped && state.Graph.Tasks[o.TaskId].IsRecurring && Active(state.Graph.Tasks[o.TaskId]))
+            .OrderBy(o => o.SlotDate).ThenBy(o => o.Id).Select(o => new OccurrenceItem(state.Graph.Tasks[o.TaskId], o)).ToArray(), cancellationToken);
     public Task<IReadOnlyList<OccurrenceItem>> GetRangeAsync(Guid profile, DateOnly from, DateOnly through, CancellationToken cancellationToken = default) =>
         RangeAsync(profile, null, from, through, false, cancellationToken);
     public Task<IReadOnlyList<OccurrenceItem>> GetHistoryAsync(TaskReference task, DateOnly from, DateOnly through, CancellationToken cancellationToken = default) =>

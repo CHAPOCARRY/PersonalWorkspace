@@ -20,7 +20,7 @@ public sealed class CanvasState(CanvasSnapshot snapshot)
     public CanvasSnapshot Snapshot() => new(PageId, PageActive, Settings, Items.Values.OrderBy(i => i.CreatedAtUtc).ThenBy(i => i.Id).ToArray());
 }
 public abstract record CanvasEdit;
-public sealed record CreateCanvasItem(CanvasKind Kind, Guid? Parent = null, int X = 24, int Y = 24) : CanvasEdit;
+public sealed record CreateCanvasItem(CanvasKind Kind, Guid? Parent = null, int X = 24, int Y = 24, int? Width = null, int? Height = null) : CanvasEdit;
 public sealed record MoveCanvasItems(IReadOnlyList<Guid> Ids, int DeltaX, int DeltaY) : CanvasEdit;
 public sealed record ResizeCanvasItem(Guid Id, int Width, int Height) : CanvasEdit;
 public sealed record ReparentCanvasItem(Guid Id, Guid? Parent) : CanvasEdit;
@@ -109,7 +109,7 @@ public static class CanvasLayout
                 if (!Enum.IsDefined(create.Kind)) throw new CanvasValidationException("Choose a Block or Container.");
                 if (create.Kind == CanvasKind.Container && create.Parent is not null) throw new CanvasValidationException("Containers cannot be nested.");
                 var size = create.Kind == CanvasKind.Container ? (512, 384) : (192, 128);
-                var rectangle = FreePosition(state, create.Parent, new(Snap(create.X), Snap(create.Y), size.Item1, size.Item2));
+                var rectangle = FreePosition(state, create.Parent, new(Snap(create.X), Snap(create.Y), Snap(create.Width ?? size.Item1), Snap(create.Height ?? size.Item2)));
                 var item = new CanvasItem(Guid.NewGuid(), state.PageId, create.Parent, create.Kind, rectangle, "", now, now); state.Items.Add(item.Id, item); break;
             case MoveCanvasItems move:
                 var moving = Selection(state, move.Ids); var dx = Snap(move.DeltaX); var dy = Snap(move.DeltaY);

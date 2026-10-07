@@ -6,6 +6,19 @@ namespace PersonalWorkspace.Services;
 public sealed class TrackerService(ITrackerRepository repository, ICurrentProfile current, IWorkspaceOperationGate gate,
     TimeProvider clock, ILogger<TrackerService> logger) : ITrackerService
 {
+    public Task<IReadOnlyList<TrackerPeriodSummary>> GetPeriodsAsync(Guid profileId, IReadOnlyList<Guid> ids, DateOnly date, CancellationToken token = default) =>
+        Run<IReadOnlyList<TrackerPeriodSummary>>(profileId, async workspace =>
+        {
+            var snapshot = await repository.ReadPeriodsAsync(workspace, ids.Distinct().ToArray(), date, token);
+            var entries = snapshot.Entries.ToLookup(e => e.TrackerId);
+            return snapshot.Items.Select(item =>
+            {
+                var period = item.Schedule.PeriodOn(date); var rows = entries[item.Item.Id].ToArray();
+                var currentRows = rows.Where(e => e.PeriodDate == period).ToArray(); var latest = rows.Length == 0 ? period : rows.Max(e => e.PeriodDate);
+                return new TrackerPeriodSummary(Period(item, period, currentRows, item.IsActive && item.Schedule.IsExpected(date)),
+                    Period(item, latest, rows.Where(e => e.PeriodDate == latest).ToArray(), false));
+            }).ToArray();
+        }, token);
     public Task<TrackerItem?> FindAsync(WorkspaceItemReference reference, CancellationToken cancellationToken = default) =>
         Run(reference.ProfileId, workspace => repository.FindAsync(workspace, reference.ItemId, cancellationToken), cancellationToken);
     public Task<TrackerItem> CreateAsync(Guid profileId, TrackerDraft draft, CancellationToken cancellationToken = default) =>

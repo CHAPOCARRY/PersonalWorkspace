@@ -53,7 +53,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         await initializer.InitializeAsync(profileId, false);
         await initializer.InitializeAsync(profileId, false);
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE Version = 1;"));
-        Assert.Equal(25L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
+        Assert.Equal(27L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
         Assert.Equal(task, await tasks.FindAsync(Ref(task)));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();
         using var command = global.CreateCommand();
@@ -81,7 +81,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         check.CommandText = "SELECT COUNT(*) FROM Tasks;";
         Assert.Equal(0L, await check.ExecuteScalarAsync());
         check.CommandText = "SELECT COUNT(*) FROM SchemaMigrations;";
-        Assert.Equal(11L, await check.ExecuteScalarAsync());
+        Assert.Equal(12L, await check.ExecuteScalarAsync());
     }
 
     [Fact]

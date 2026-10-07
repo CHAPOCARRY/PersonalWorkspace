@@ -43,6 +43,8 @@ public sealed record TrackerItem(WorkspaceItem Item, TrackerSettings Settings, T
 public sealed record TrackerEntry(Guid Id, Guid TrackerId, DateOnly PeriodDate, DateOnly LocalDate, TimeOnly LocalTime,
     TrackerValue Value, string? Note, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);
 public sealed record TrackerPeriod(TrackerItem Tracker, DateOnly? PeriodDate, TrackerValue? Value, int EntryCount, bool Pending);
+public sealed record TrackerPeriodSummary(TrackerPeriod Current, TrackerPeriod Latest);
+public sealed record TrackerPeriodSnapshot(IReadOnlyList<TrackerItem> Items, IReadOnlyList<TrackerEntry> Entries);
 
 // Selectors deliberately provide no unbounded history operation.
 public sealed record TrackerEntryQuery(DateOnly? From = null, DateOnly? Through = null, DateOnly? Period = null,
@@ -54,6 +56,7 @@ public sealed class TrackerState(TrackerItem item, IReadOnlyList<TrackerEntry> e
 }
 public interface ITrackerRepository
 {
+    Task<TrackerPeriodSnapshot> ReadPeriodsAsync(WorkspaceContext workspace, IReadOnlyList<Guid> ids, DateOnly date, CancellationToken token);
     Task<IReadOnlyList<TrackerItem>> GetAsync(WorkspaceContext workspace, TrackerCollection collection, CancellationToken cancellationToken);
     Task<TrackerItem?> FindAsync(WorkspaceContext workspace, Guid id, CancellationToken cancellationToken);
     Task CreateAsync(WorkspaceContext workspace, TrackerItem item, CancellationToken cancellationToken);
@@ -64,6 +67,7 @@ public interface ITrackerRepository
 }
 public interface ITrackerService
 {
+    Task<IReadOnlyList<TrackerPeriodSummary>> GetPeriodsAsync(Guid profileId, IReadOnlyList<Guid> ids, DateOnly date, CancellationToken token = default);
     Task<IReadOnlyList<TrackerPeriod>> GetAsync(Guid profileId, TrackerCollection collection = TrackerCollection.Active, bool todayOnly = false, CancellationToken cancellationToken = default);
     Task<TrackerItem?> FindAsync(WorkspaceItemReference reference, CancellationToken cancellationToken = default);
     Task<TrackerItem> CreateAsync(Guid profileId, TrackerDraft draft, CancellationToken cancellationToken = default);
