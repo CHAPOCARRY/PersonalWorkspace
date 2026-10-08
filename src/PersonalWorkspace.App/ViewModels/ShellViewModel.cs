@@ -28,16 +28,18 @@ public sealed partial class ShellViewModel : ObservableObject
     public TrackerWorkspaceViewModel Trackers { get; }
     public JournalWorkspaceViewModel Journals { get; }
     public PageWorkspaceViewModel Pages { get; }
+    public ListWorkspaceViewModel Lists { get; }
+    public bool ShowLists => Profiles.ShowPlaceholder && Lists.IsArea;
     public bool ShowPages => Profiles.ShowPlaceholder && Pages.IsArea;
     public bool ShowJournals => Profiles.ShowPlaceholder && Journals.IsArea;
     public bool ShowTrackers => Profiles.ShowPlaceholder && Trackers.IsArea;
     public bool ShowCalendar => Profiles.ShowPlaceholder && Calendar.IsCalendarArea;
     public Guid? ActiveSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
     public bool ShowOrganization => Profiles.ShowPlaceholder && navigation.Current.Destination == "Organization";
-    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea && !Trackers.IsArea && !Journals.IsArea && !Pages.IsArea;
+    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea && !Trackers.IsArea && !Journals.IsArea && !Pages.IsArea && !Lists.IsArea;
     public bool ShowTasks => Profiles.ShowPlaceholder && Tasks.IsTaskArea;
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar, TrackerWorkspaceViewModel trackers, JournalWorkspaceViewModel journals, PageWorkspaceViewModel pages)
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar, TrackerWorkspaceViewModel trackers, JournalWorkspaceViewModel journals, PageWorkspaceViewModel pages, ListWorkspaceViewModel lists)
     {
         this.settings = settings;
         this.navigation = navigation;
@@ -46,7 +48,7 @@ public sealed partial class ShellViewModel : ObservableObject
         Tasks = tasks;
         Organization = organization;
         Calendar = calendar;
-        Trackers = trackers; Journals = journals; Pages = pages;
+        Trackers = trackers; Journals = journals; Pages = pages; Lists = lists;
         Profiles.PropertyChanged += (_, _) => NotifyContent();
         Tasks.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Tasks.IsTaskArea)) NotifyContent(); };
         navigation.Changed += (_, _) => UpdateDestination();
@@ -62,6 +64,7 @@ public sealed partial class ShellViewModel : ObservableObject
         await Trackers.ReloadAsync();
         await Journals.ReloadAsync();
         await Pages.ReloadAsync();
+        await Lists.ReloadAsync();
     }
 
     public void Navigate(string destination)
@@ -119,6 +122,7 @@ public sealed partial class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowTrackers));
         OnPropertyChanged(nameof(ShowJournals));
         OnPropertyChanged(nameof(ShowPages));
+        OnPropertyChanged(nameof(ShowLists));
     }
 
     public void ReportError(string message) => ErrorMessage = message;
