@@ -26,7 +26,7 @@ public sealed partial class TrackerTests
         var journal = Guid.NewGuid(); var entry = Guid.NewGuid();
         await Sql($"INSERT INTO WorkspaceItems VALUES('{journal}',4,'Daily','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00',NULL,NULL); INSERT INTO Journals VALUES('{journal}','Reflection'); INSERT INTO JournalEntries VALUES('{entry}','{journal}','2026-10-01','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00');", legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(9L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
+        Assert.Equal(13L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(9L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(entry.ToString(), await Sql("SELECT Id FROM JournalEntries;", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM Pages;", legacy));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync(); using var command = global.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name='Pages';"; Assert.Equal(0L, await command.ExecuteScalarAsync());
     }

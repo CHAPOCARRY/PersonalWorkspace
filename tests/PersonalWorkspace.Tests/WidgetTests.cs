@@ -32,7 +32,7 @@ public sealed partial class TrackerTests
         var page = Guid.NewGuid(); var block = Guid.NewGuid();
         await Sql($"INSERT INTO WorkspaceItems VALUES('{page}',5,'Training','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00',NULL,NULL);INSERT INTO Pages VALUES('{page}',NULL,0,NULL);INSERT INTO PageCanvasSettings VALUES('{page}',0,125);INSERT INTO PageCanvasItems VALUES('{block}','{page}',NULL,0,24,24,192,128,'','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00');", legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(11L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
+        Assert.Equal(13L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(11L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(block.ToString(), await Sql("SELECT Id FROM PageCanvasItems;", legacy)); Assert.Equal(125L, await Sql("SELECT ZoomPercent FROM PageCanvasSettings;", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM WidgetInstances;", legacy));
     }
     [Fact]

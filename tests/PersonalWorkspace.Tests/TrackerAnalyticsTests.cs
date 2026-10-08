@@ -213,7 +213,7 @@ public sealed partial class TrackerTests
         var result = await Analytics(repository).GetAsync(profile, ids, AnalyticsPreset.SevenDays);
         Assert.Equal(ids, result.Series.Select(s => s.Tracker.Item.Id)); Assert.Equal(1, repository.Reads);
         Assert.Equal(new(Day.AddDays(-6), Day), repository.LastRange); Assert.Equal(count, repository.Ids!.Count);
-        Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal(13L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;"));
     }
     [Theory]
     [InlineData(TrackerValueType.Currency, "EUR", "USD", false)]

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/ListWorkspaceViewModel.cs" Link="Presentation/ListWorkspaceViewModel.cs" />
     <ProjectReference Include="../../src/PersonalWorkspace.Data/PersonalWorkspace.Data.csproj" />
     <ProjectReference Include="../../src/PersonalWorkspace.Services/PersonalWorkspace.Services.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

@@ -1,6 +1,6 @@
 namespace PersonalWorkspace.Core;
 
-public enum WorkspaceItemType { Task = 1, Event = 2, Tracker = 3, Journal = 4, Page = 5 }
+public enum WorkspaceItemType { Task = 1, Event = 2, Tracker = 3, Journal = 4, Page = 5, List = 6 }
 public enum TaskStatus { ToDo, Doing, Blocked, Done }
 public enum TaskPriority { None, Low, Normal, High, Critical }
 public enum TaskCollection { Active, Today, Archived, Trash }
