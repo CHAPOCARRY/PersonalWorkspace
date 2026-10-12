@@ -24,15 +24,24 @@ public sealed partial class CanvasWorkspaceView
         var filter = new TextBox { Header = "Find source by title", PlaceholderText = "Filter titles" };
         var source = new ComboBox { Header = "Source", DisplayMemberPath = "Label", HorizontalAlignment = HorizontalAlignment.Stretch, PlaceholderText = "Choose an existing item" };
         var mode = new ComboBox { Header = "Presentation", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var itemFilter = new ComboBox { Header = "Visible List items", ItemsSource = Enum.GetValues<ListFilter>(), SelectedItem = existing?.Widget.List?.Filter ?? ListFilter.All };
         var chart = new ComboBox { Header = "Chart", ItemsSource = Enum.GetValues<WidgetChartKind>(), SelectedItem = existing?.Widget.Chart?.Kind ?? WidgetChartKind.Line };
         var ranges = new[] { new RangeChoice(AnalyticsPreset.SevenDays, "7 days"), new RangeChoice(AnalyticsPreset.ThirtyDays, "30 days"), new RangeChoice(AnalyticsPreset.NinetyDays, "90 days"), new RangeChoice(AnalyticsPreset.ThisMonth, "This month") };
         var range = new ComboBox { Header = "Range", ItemsSource = ranges, DisplayMemberPath = "Label", SelectedItem = ranges.Single(r => r.Value == (existing?.Widget.Chart?.Range ?? AnalyticsPreset.ThirtyDays)) };
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["Danger"] };
         var hint = new TextBlock { Text = "Sources stay in their libraries. Checkbox interaction applies to ordinary checkbox Tasks; recurring Tasks use today's existing occurrence.", TextWrapping = TextWrapping.Wrap, Style = (Style)Application.Current.Resources["BodyStyle"] };
-        foreach (var pair in new[] { ((DependencyObject)type, "WidgetType"), (filter, "WidgetSourceFilter"), (source, "WidgetSource"), (mode, "WidgetMode"), (chart, "WidgetChartKind"), (range, "WidgetChartRange"), (error, "WidgetPickerError") }) AutomationProperties.SetAutomationId(pair.Item1, pair.Item2);
-        var stack = new StackPanel { Spacing = 8, Width = 400 }; foreach (var control in new UIElement[] { type, filter, source, mode, chart, range, hint, error }) stack.Children.Add(control);
+        foreach (var pair in new[] { ((DependencyObject)type, "WidgetType"), (filter, "WidgetSourceFilter"), (source, "WidgetSource"), (mode, "WidgetMode"), (chart, "WidgetChartKind"), (range, "WidgetChartRange"), (itemFilter, "WidgetListFilter"), (error, "WidgetPickerError") }) AutomationProperties.SetAutomationId(pair.Item1, pair.Item2);
+        var stack = new StackPanel { Spacing = 8, Width = 400 }; foreach (var control in new UIElement[] { type, filter, source, mode, itemFilter, chart, range, hint, error }) stack.Children.Add(control);
         var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = existing is null ? "Add Widget" : "Configure Widget", Content = new ScrollViewer { Content = stack, MaxHeight = 540 }, PrimaryButtonText = existing is null ? "Add Widget" : "Save Widget", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
         var candidates = Array.Empty<SourceChoice>(); var generation = 0;
+        void ListModes()
+        {
+            if (type.SelectedItem is not WidgetType.List) return;
+            var selected = mode.SelectedItem as WidgetMode? ?? existing?.Widget.Mode ?? WidgetMode.Checklist;
+            var choices = widgets.ListModes((source.SelectedItem as SourceChoice)?.Id ?? existing?.Widget.SourceItemId);
+            mode.ItemsSource = choices; mode.SelectedItem = choices.Contains(selected) ? selected : WidgetMode.Checklist;
+            itemFilter.Visibility = mode.SelectedItem is WidgetMode.Compact ? Visibility.Collapsed : Visibility.Visible;
+        }
         void Filter()
         {
             var selected = (source.SelectedItem as SourceChoice)?.Id ?? existing?.Widget.SourceItemId;
@@ -45,15 +54,19 @@ public sealed partial class CanvasWorkspaceView
             if (type.SelectedItem is not WidgetType selectedType) return;
             mode.ItemsSource = WidgetRules.Modes(selectedType); mode.SelectedItem = existing?.Widget.Mode ?? WidgetRules.Modes(selectedType)[0];
             chart.Visibility = range.Visibility = selectedType == WidgetType.TrackerChart ? Visibility.Visible : Visibility.Collapsed;
+            itemFilter.Visibility = selectedType == WidgetType.List ? Visibility.Visible : Visibility.Collapsed;
+            hint.Text = selectedType == WidgetType.List ? "List data stays canonical. Show up to 50 items in stored order. Counts and totals cover the whole List. Shopping requires prices. Compact shows a whole-List summary." : "Sources stay in their libraries. Checkbox interaction applies to ordinary checkbox Tasks; recurring Tasks use today's existing occurrence.";
             try
             {
                 var list = await widgets.CandidatesAsync(selectedType);
                 if (request != generation || widgets.Reference != reference) return;
-                candidates = list.Select(s => new SourceChoice(s.Id, s.Title + " · " + s.Id.ToString("N")[..8])).ToArray(); Filter(); dialog.IsPrimaryButtonEnabled = true;
+                candidates = list.Select(s => new SourceChoice(s.Id, s.Title + " · " + s.Id.ToString("N")[..8])).ToArray(); Filter(); ListModes(); dialog.IsPrimaryButtonEnabled = true;
             }
             catch (Exception) { if (request == generation) error.Text = "Sources could not be loaded. Reopen this picker and try again."; }
         }
         type.SelectionChanged += async (_, _) => await Load(); filter.TextChanged += (_, _) => Filter();
+        source.SelectionChanged += (_, _) => ListModes();
+        mode.SelectionChanged += (_, _) => itemFilter.Visibility = type.SelectedItem is WidgetType.List && mode.SelectedItem is not WidgetMode.Compact ? Visibility.Visible : Visibility.Collapsed;
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             args.Cancel = true; var deferral = args.GetDeferral();
@@ -64,8 +77,9 @@ public sealed partial class CanvasWorkspaceView
                 var chosen = source.SelectedItem as SourceChoice;
                 if (existing is null && chosen is null) { error.Text = "Choose a source item."; return; }
                 var settings = selectedType == WidgetType.TrackerChart ? new WidgetChartSettings((WidgetChartKind)chart.SelectedItem, ((RangeChoice)range.SelectedItem).Value) : null;
-                WidgetEdit edit = existing is null ? new AddWidget(selectedType, chosen!.Id, selectedMode, emptyBlock, parent, x, y, settings)
-                    : new ConfigureWidget(existing.Widget.Id, selectedMode, settings, chosen?.Id);
+                var listSettings = selectedType == WidgetType.List ? new WidgetListSettings((ListFilter)itemFilter.SelectedItem) : null;
+                WidgetEdit edit = existing is null ? new AddWidget(selectedType, chosen!.Id, selectedMode, emptyBlock, parent, x, y, settings, listSettings)
+                    : new ConfigureWidget(existing.Widget.Id, selectedMode, settings, chosen?.Id, listSettings);
                 if (await widgets.EditAsync(edit)) args.Cancel = false; else error.Text = widgets.Error ?? "The Widget could not be saved.";
             }
             finally { deferral.Complete(); }

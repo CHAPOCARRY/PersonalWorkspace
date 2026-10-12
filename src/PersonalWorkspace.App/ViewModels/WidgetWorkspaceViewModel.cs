@@ -18,6 +18,10 @@ public sealed class WidgetContent : ObservableObject
     public OccurrenceItem? Occurrence { get; init; }
     public TrackerPeriodSummary? Periods { get; init; }
     public TrackerAnalyticsResult? Analytics { get; init; }
+    public ListViewData? ListData { get; init; }
+    public IReadOnlyList<ListItemRow> ListItems { get; init; } = [];
+    public WidgetMode ListMode => Widget.Mode == WidgetMode.Shopping && ListData?.Definition.ShowPrices != true ? WidgetMode.Checklist : Widget.Mode;
+    public bool QuickAdd => SourceActive && ListData is not null && ListMode is WidgetMode.Checklist or WidgetMode.Shopping;
     public string Input { get; set; } = "";
     public string? Error { get => error; set => SetProperty(ref error, value); }
     public bool SourceActive => Source is { ArchivedAtUtc: null, DeletedAtUtc: null };
@@ -38,6 +42,8 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     private readonly IEventService events;
     private readonly IJournalService journals;
     private readonly IPageService pages;
+    private readonly IListService? lists;
+    private HashSet<Guid> pricedCandidates = [];
     private readonly ICurrentProfile current;
     private readonly INavigationService navigation;
     private readonly TimeProvider clock;
@@ -47,10 +53,11 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     private DateOnly loadedDate;
     public WidgetWorkspaceViewModel(IWidgetService widgets, ITaskService tasks, IRecurrenceService recurrence, ITrackerService trackers,
         ITrackerAnalyticsService analytics, IEventService events, IJournalService journals, IPageService pages,
-        ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<WidgetWorkspaceViewModel> logger)
+        ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<WidgetWorkspaceViewModel> logger, IListService? lists = null)
     {
         this.widgets = widgets; this.tasks = tasks; this.recurrence = recurrence; this.trackers = trackers; this.analytics = analytics;
         this.events = events; this.journals = journals; this.pages = pages; this.current = current; this.navigation = navigation; this.clock = clock; this.logger = logger;
+        this.lists = lists;
         current.Changed += (_, _) => { if (Reference?.ProfileId != current.Current?.Id) Clear(); };
     }
     public WorkspaceItemReference? Reference { get; private set; }
@@ -62,7 +69,7 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     public string? Error { get; private set; }
     public event Action<CanvasSnapshot>? LayoutChanged;
     private DateOnly Today => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
-    public void Clear() { revision++; Reference = null; Page = null; Rows = []; loading = false; Error = null; Notify(); }
+    public void Clear() { revision++; Reference = null; Page = null; Rows = []; pricedCandidates = []; loading = false; Error = null; Notify(); }
     public void SetCanvas(CanvasSnapshot snapshot)
     {
         if (Page?.Canvas.PageId != snapshot.PageId) return;
@@ -98,8 +105,23 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
             var numeric = (await analytics.GetCandidatesAsync(reference.ProfileId)).Where(t => t.Settings.Type != TrackerValueType.Boolean).Select(t => t.Item.Id).ToHashSet();
             list = list.Where(s => numeric.Contains(s.Id)).ToArray();
         }
+        if (type == WidgetType.List && lists is not null)
+        {
+            var definitions = await lists.GetDefinitionsAsync(reference.ProfileId);
+            if (Reference == reference) pricedCandidates = definitions.Where(l => l.ShowPrices).Select(l => l.Item.Id).ToHashSet();
+        }
         return Reference == reference ? list : [];
     }
+    public WidgetMode[] ListModes(Guid? source) => WidgetRules.ListModes(source is { } id && pricedCandidates.Contains(id));
+    public Task CheckListItemAsync(WidgetContent row, ListItemRow item) => ContentAction(row, async () =>
+    {
+        if (lists is null || !row.QuickAdd || !row.ListItems.Contains(item) || item.Reference.ProfileId != row.ProfileId || item.Reference.ListId != row.Source?.Id) return;
+        await lists.SetCheckedAsync(item.Reference, !item.IsChecked);
+    });
+    public Task QuickAddAsync(WidgetContent row) => ContentAction(row, async () =>
+    {
+        if (lists is not null && row.QuickAdd) await lists.AddAsync(new(row.ProfileId, row.Source!.Id), new(row.Input));
+    });
     public async Task<bool> EditAsync(WidgetEdit edit)
     {
         if (!CanConfigure || Reference is not { } reference) return false;
@@ -151,6 +173,8 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
         TaskGraph? graph = null; IReadOnlyDictionary<Guid, TaskProgress> progress = new Dictionary<Guid, TaskProgress>();
         IReadOnlyList<OccurrenceItem> occurrences = []; IReadOnlyList<TrackerPeriodSummary> periods = [];
         IReadOnlyList<EventItem> eventItems = []; IReadOnlyList<JournalSummaryRow> journalRows = []; PageGraph? pageGraph = null;
+        IReadOnlyList<ListViewData> listViews = [];
+        static ListViewRequest ListRequest(WidgetInstance w) => new(w.SourceItemId!.Value, w.List?.Filter ?? ListFilter.All, w.Mode == WidgetMode.Compact ? 0 : 50);
         async Task Load(WidgetType type, Func<Task> action)
         {
             if (!active.Any(w => w.Type == type)) return;
@@ -167,6 +191,7 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
         await Load(WidgetType.Event, async () => eventItems = await events.GetRangeAsync(profile, DateOnly.MinValue, DateOnly.MaxValue));
         await Load(WidgetType.Journal, async () => journalRows = JournalPresentation.Rows(profile, today, await journals.GetAsync(profile, date: today)));
         await Load(WidgetType.PageLink, async () => pageGraph = await pages.GetAsync(profile));
+        await Load(WidgetType.List, async () => listViews = await (lists ?? throw new WidgetValidationException("Lists are unavailable.")).ReadViewsAsync(profile, active.Where(w => w.Type == WidgetType.List).Select(ListRequest).Distinct().ToArray()));
         var charts = new Dictionary<(Guid, AnalyticsPreset), TrackerAnalyticsResult>(); var chartErrors = new Dictionary<(Guid, AnalyticsPreset), string>();
         foreach (var widget in active.Where(w => w.Type == WidgetType.TrackerChart))
         {
@@ -181,6 +206,7 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
             var source = widget.SourceItemId is { } id ? sourceMap.GetValueOrDefault(id) : null;
             var title = source?.Title ?? "Missing reference"; var summary = ""; NavigationRoute? route = null;
             TaskItem? task = null; OccurrenceItem? occurrence = null; TrackerPeriodSummary? period = null; TrackerAnalyticsResult? chart = null;
+            ListViewData? listData = null; IReadOnlyList<ListItemRow> listItems = [];
             var error = errors.GetValueOrDefault(widget.Type);
             if (source is null) summary = $"Referenced {WidgetRules.SourceType(widget.Type)} no longer exists. Unlock Layout to replace the source or remove this Widget.";
             else if (!Active(widget)) summary = source.DeletedAtUtc is not null ? "Source is in Trash. Restore it in its library." : "Source is archived. Restore it in its library to interact.";
@@ -223,15 +249,32 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
                     var target = pageGraph?.Pages.GetValueOrDefault(source.Id);
                     if (target is not null) { title = new PageRow(new(profile, source.Id), target).Label; summary = string.Join(" / ", pageGraph!.Ancestors(source.Id).Select(p => p.Item.Title)); }
                     route = new("Pages", source.Id.ToString("D")); break;
+                case WidgetType.List:
+                    route = new("Lists", source.Id.ToString("D")); listData = listViews.SingleOrDefault(v => v.Request == ListRequest(widget));
+                    if (listData is null) break;
+                    var definition = listData.Definition;
+                    var shopping = widget.Mode == WidgetMode.Shopping && definition.ShowPrices;
+                    summary = $"{listData.UncheckedCount} unchecked · {listData.CheckedCount} checked";
+                    if (definition.ShowPrices && widget.Mode is WidgetMode.Shopping or WidgetMode.Compact)
+                        summary += "\nRemaining: " + ListItemRow.Money(listData.Totals.Remaining, definition.CurrencyCode) + (shopping ? "\nTotal: " + ListItemRow.Money(listData.Totals.Total, definition.CurrencyCode) : "");
+                    if (widget.Mode == WidgetMode.Shopping && !definition.ShowPrices) summary += "\nPrices are disabled · Showing Checklist";
+                    if (widget.Mode != WidgetMode.Compact)
+                    {
+                        summary += $"\n{widget.List?.Filter ?? ListFilter.All} · Showing {listData.Items.Count} of {listData.MatchingCount}";
+                        if (listData.MatchingCount == 0) summary += "\nNo matching items.";
+                        else if (listData.MatchingCount > listData.Items.Count) summary += " · Open List for more";
+                        listItems = listData.Items.Select(i => new ListItemRow(new(profile, source.Id, i.Id), i, shopping && definition.ShowQuantity, shopping, definition.CurrencyCode)).ToArray();
+                    }
+                    break;
             }
             return new WidgetContent { ProfileId = profile, Widget = widget, Source = source, Title = title, Summary = summary, Route = route,
-                Task = task, Occurrence = occurrence, Periods = period, Analytics = chart, Error = error };
+                Task = task, Occurrence = occurrence, Periods = period, Analytics = chart, ListData = listData, ListItems = listItems, Error = error };
         }).ToArray();
     }
     private string Message(Exception e)
     {
         if (e is WidgetValidationException or WidgetOperationException or CanvasValidationException or WorkspaceChangedException or TaskValidationException or TaskOperationException
-            or TrackerValidationException or TrackerOperationException or EventValidationException or EventOperationException or JournalValidationException or JournalOperationException or PageValidationException or PageOperationException) return e.Message;
+            or TrackerValidationException or TrackerOperationException or EventValidationException or EventOperationException or JournalValidationException or JournalOperationException or PageValidationException or PageOperationException or ListValidationException or ListOperationException) return e.Message;
         logger.LogError(e, "Widget presentation failed"); return "This Widget could not be refreshed. Please try again.";
     }
     private void Notify() { foreach (var name in new[] { nameof(Rows), nameof(Page), nameof(IsBusy), nameof(CanConfigure), nameof(CanInteract), nameof(Error) }) OnPropertyChanged(name); }

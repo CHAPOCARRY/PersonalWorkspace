@@ -5,6 +5,11 @@ namespace PersonalWorkspace.Services;
 
 public sealed class ListService(IListRepository repository, ITaskService tasks, ICurrentProfile current, IWorkspaceOperationGate gate, TimeProvider clock, ILogger<ListService> logger) : IListService
 {
+    public Task<IReadOnlyList<ListViewData>> ReadViewsAsync(Guid profile, IReadOnlyList<ListViewRequest> requests, CancellationToken token = default) => Run(profile, w =>
+    {
+        if (requests.Any(r => !Enum.IsDefined(r.Filter) || r.Limit is < 0 or > 1000)) throw new ListValidationException("Choose a valid List filter and a limit from 0 to 1,000.");
+        return repository.ReadViewsAsync(w, requests.Distinct().ToArray(), token);
+    }, token);
     public Task<IReadOnlyList<ListDefinition>> GetDefinitionsAsync(Guid profile, CancellationToken token = default) => Run(profile, w => repository.GetDefinitionsAsync(w, token), token);
     public Task<ListSnapshot> ReadAsync(WorkspaceItemReference list, CancellationToken token = default) => Run(list.ProfileId, w => repository.ReadAsync(w, list.ItemId, token), token);
     public Task<IReadOnlyList<ListItem>> GetItemsAsync(WorkspaceItemReference list, ListItemQuery query, CancellationToken token = default) => Run(list.ProfileId, w =>

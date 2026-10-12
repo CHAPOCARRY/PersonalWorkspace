@@ -233,6 +233,7 @@ public static class WorkspaceMigrationCatalog
         PageMigration.Definition,
         CanvasMigration.Definition,
         WidgetMigration.Definition,
-        ListMigration.Definition
+        ListMigration.Definition,
+        ListWidgetMigration.Definition
     ];
 }
