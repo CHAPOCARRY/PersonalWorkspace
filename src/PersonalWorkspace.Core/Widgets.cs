@@ -1,23 +1,25 @@
 namespace PersonalWorkspace.Core;
 
-public enum WidgetType { Task, Tracker, TrackerChart, Event, Journal, PageLink }
-public enum WidgetMode { Card, Checkbox, Progress, CurrentValue, QuickEntry, Chart, TodaySummary }
+public enum WidgetType { Task, Tracker, TrackerChart, Event, Journal, PageLink, List }
+public enum WidgetMode { Card, Checkbox, Progress, CurrentValue, QuickEntry, Chart, TodaySummary, Checklist, Shopping, Compact }
 public enum WidgetChartKind { Line, Bar, Area }
 public sealed record WidgetChartSettings(WidgetChartKind Kind = WidgetChartKind.Line, AnalyticsPreset Range = AnalyticsPreset.ThirtyDays);
+public sealed record WidgetListSettings(ListFilter Filter = ListFilter.All);
 public sealed record WidgetInstance(Guid Id, Guid CanvasItemId, WidgetType Type, Guid? SourceItemId, WidgetMode Mode,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, WidgetChartSettings? Chart = null);
-public sealed record WidgetPage(CanvasSnapshot Canvas, IReadOnlyList<WidgetInstance> Widgets, IReadOnlyList<WorkspaceItem> Sources);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, WidgetChartSettings? Chart = null, WidgetListSettings? List = null);
+public sealed record WidgetPage(CanvasSnapshot Canvas, IReadOnlyList<WidgetInstance> Widgets, IReadOnlyList<WorkspaceItem> Sources, IReadOnlySet<Guid>? PricedLists = null);
 public sealed class WidgetState(WidgetPage page)
 {
     public CanvasSnapshot Canvas { get; set; } = page.Canvas;
     public Dictionary<Guid, WidgetInstance> Widgets { get; } = page.Widgets.ToDictionary(w => w.Id);
     public IReadOnlyList<WorkspaceItem> Sources { get; } = page.Sources;
-    public WidgetPage Snapshot() => new(Canvas, Widgets.Values.OrderBy(w => w.CreatedAtUtc).ThenBy(w => w.Id).ToArray(), Sources);
+    public IReadOnlySet<Guid> PricedLists { get; } = page.PricedLists ?? new HashSet<Guid>();
+    public WidgetPage Snapshot() => new(Canvas, Widgets.Values.OrderBy(w => w.CreatedAtUtc).ThenBy(w => w.Id).ToArray(), Sources, PricedLists);
 }
 public abstract record WidgetEdit;
 public sealed record AddWidget(WidgetType Type, Guid Source, WidgetMode Mode, Guid? EmptyBlock = null, Guid? Parent = null,
-    int X = 24, int Y = 24, WidgetChartSettings? Chart = null) : WidgetEdit;
-public sealed record ConfigureWidget(Guid Id, WidgetMode Mode, WidgetChartSettings? Chart = null, Guid? Source = null) : WidgetEdit;
+    int X = 24, int Y = 24, WidgetChartSettings? Chart = null, WidgetListSettings? List = null) : WidgetEdit;
+public sealed record ConfigureWidget(Guid Id, WidgetMode Mode, WidgetChartSettings? Chart = null, Guid? Source = null, WidgetListSettings? List = null) : WidgetEdit;
 public sealed record ReplaceWidgetSource(Guid Id, Guid Source) : WidgetEdit;
 public sealed record RemoveWidget(Guid Id, bool RemoveBlock = false) : WidgetEdit;
 public sealed record DuplicateWidget(Guid Id) : WidgetEdit;
@@ -42,6 +44,7 @@ public static class WidgetRules
     {
         WidgetType.Task => WorkspaceItemType.Task, WidgetType.Tracker or WidgetType.TrackerChart => WorkspaceItemType.Tracker,
         WidgetType.Event => WorkspaceItemType.Event, WidgetType.Journal => WorkspaceItemType.Journal, WidgetType.PageLink => WorkspaceItemType.Page,
+        WidgetType.List => WorkspaceItemType.List,
         _ => throw new WidgetValidationException("Choose a supported Widget type.")
     };
     public static WidgetMode[] Modes(WidgetType type) => type switch
@@ -49,13 +52,14 @@ public static class WidgetRules
         WidgetType.Task => [WidgetMode.Card, WidgetMode.Checkbox, WidgetMode.Progress],
         WidgetType.Tracker => [WidgetMode.CurrentValue, WidgetMode.Progress, WidgetMode.QuickEntry],
         WidgetType.TrackerChart => [WidgetMode.Chart], WidgetType.Journal => [WidgetMode.TodaySummary],
-        WidgetType.Event or WidgetType.PageLink => [WidgetMode.Card], _ => []
+        WidgetType.Event or WidgetType.PageLink => [WidgetMode.Card], WidgetType.List => [WidgetMode.Checklist, WidgetMode.Shopping, WidgetMode.Compact], _ => []
     };
     public static (int Width, int Height) Size(WidgetType type) => type switch
     {
-        WidgetType.TrackerChart => (480, 320), WidgetType.PageLink => (256, 160), _ => (320, 240)
+        WidgetType.TrackerChart => (480, 320), WidgetType.PageLink => (256, 160), WidgetType.List => (400, 320), _ => (320, 240)
     };
-    public static void Validate(WidgetType type, WidgetMode mode, WidgetChartSettings? chart)
+    public static WidgetMode[] ListModes(bool prices) => Modes(WidgetType.List).Where(m => prices || m != WidgetMode.Shopping).ToArray();
+    public static void Validate(WidgetType type, WidgetMode mode, WidgetChartSettings? chart, WidgetListSettings? list = null)
     {
         if (!Modes(type).Contains(mode)) throw new WidgetValidationException("Choose a presentation supported by this Widget type.");
         if (type == WidgetType.TrackerChart)
@@ -64,6 +68,11 @@ public static class WidgetRules
                 throw new WidgetValidationException("Choose Line, Bar or Area and a 7/30/90-day or This month range.");
         }
         else if (chart is not null) throw new WidgetValidationException("Chart settings belong only to Tracker Chart Widgets.");
+        if (type == WidgetType.List)
+        {
+            if (list is null || !Enum.IsDefined(list.Filter)) throw new WidgetValidationException("Choose All, Unchecked or Checked for the List Widget.");
+        }
+        else if (list is not null) throw new WidgetValidationException("List settings belong only to List Widgets.");
     }
     public static WidgetPage Apply(WidgetState state, WidgetEdit edit, DateTimeOffset now)
     {
@@ -86,21 +95,30 @@ public static class WidgetRules
             state.Canvas = CanvasLayout.Apply(state.Canvas, new CreateCanvasItem(CanvasKind.Block, parent, x, y, original?.Width ?? size.Width, original?.Height ?? size.Height), now);
             return state.Canvas.Items.Single(i => !ids.Contains(i.Id)).Id;
         }
+        WidgetMode Compatible(WidgetType type, WidgetMode mode, Guid? source, bool replacement)
+        {
+            if (type != WidgetType.List || mode != WidgetMode.Shopping || source is null || state.PricedLists.Contains(source.Value)) return mode;
+            if (replacement) return WidgetMode.Checklist;
+            throw new WidgetValidationException("Shopping presentation requires a List with prices enabled. Choose Checklist or Compact.");
+        }
         switch (edit)
         {
             case AddWidget add:
                 var chart = add.Type == WidgetType.TrackerChart ? add.Chart ?? new() : add.Chart;
-                Validate(add.Type, add.Mode, chart); Source(add.Type, add.Source);
+                var list = add.Type == WidgetType.List ? add.List ?? new() : add.List;
+                Validate(add.Type, add.Mode, chart, list); Source(add.Type, add.Source); Compatible(add.Type, add.Mode, add.Source, false);
                 var host = add.EmptyBlock ?? CreateHost(add.Type, add.Parent, add.X, add.Y);
                 if (!state.Canvas.Items.Any(i => i.Id == host && i.Kind == CanvasKind.Block) || state.Widgets.Values.Any(w => w.CanvasItemId == host))
                     throw new WidgetValidationException("Choose an Empty Block on this Page.");
-                var widget = new WidgetInstance(Guid.NewGuid(), host, add.Type, add.Source, add.Mode, now, now, chart); state.Widgets.Add(widget.Id, widget); break;
+                var widget = new WidgetInstance(Guid.NewGuid(), host, add.Type, add.Source, add.Mode, now, now, chart, list); state.Widgets.Add(widget.Id, widget); break;
             case ConfigureWidget config:
-                var current = Find(config.Id); Validate(current.Type, config.Mode, config.Chart);
+                var current = Find(config.Id); var listSettings = current.Type == WidgetType.List ? config.List ?? current.List ?? new() : config.List;
+                Validate(current.Type, config.Mode, config.Chart, listSettings);
                 if (config.Source is { } replacement && replacement != current.SourceItemId) Source(current.Type, replacement);
-                Update(current, current with { Mode = config.Mode, Chart = config.Chart, SourceItemId = config.Source ?? current.SourceItemId }); break;
+                var source = config.Source ?? current.SourceItemId;
+                Update(current, current with { Mode = Compatible(current.Type, config.Mode, source, config.Source is not null && config.Source != current.SourceItemId), Chart = config.Chart, List = listSettings, SourceItemId = source }); break;
             case ReplaceWidgetSource replace:
-                var missing = Find(replace.Id); Source(missing.Type, replace.Source); Update(missing, missing with { SourceItemId = replace.Source }); break;
+                var missing = Find(replace.Id); Source(missing.Type, replace.Source); Update(missing, missing with { SourceItemId = replace.Source, Mode = Compatible(missing.Type, missing.Mode, replace.Source, true) }); break;
             case RemoveWidget remove:
                 var removed = Find(remove.Id); state.Widgets.Remove(removed.Id);
                 if (remove.RemoveBlock) state.Canvas = CanvasLayout.Apply(state.Canvas, new DeleteCanvasItems([removed.CanvasItemId]), now);

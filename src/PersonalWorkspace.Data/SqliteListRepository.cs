@@ -6,6 +6,35 @@ namespace PersonalWorkspace.Data;
 
 public sealed class SqliteListRepository : IListRepository
 {
+    public async Task<IReadOnlyList<ListViewData>> ReadViewsAsync(WorkspaceContext workspace, IReadOnlyList<ListViewRequest> requests, CancellationToken token)
+    {
+        if (requests.Count == 0) return [];
+        await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var definitions = new Dictionary<Guid, ListDefinition>();
+        foreach (var chunk in requests.Select(r => r.ListId).Distinct().Chunk(400))
+            foreach (var definition in await Definitions(connection, transaction, null, token, chunk)) definitions.Add(definition.Item.Id, definition);
+        var results = new List<ListViewData>();
+        foreach (var group in requests.Distinct().GroupBy(r => r.ListId))
+        {
+            if (!definitions.TryGetValue(group.Key, out var definition)) throw new ListValidationException("This List is no longer available in this profile.");
+            var totals = new ListRules.TotalAccumulator(); var count = 0; var checkedCount = 0;
+            // Stream only numeric/check fields for global totals/counts, never retain a complete child snapshot.
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction; command.CommandText = "SELECT IsChecked,Quantity,UnitPrice FROM ListItems WHERE ListId=$id;"; Add(command, "$id", group.Key);
+                using var reader = await command.ExecuteReaderAsync(token);
+                while (await reader.ReadAsync(token))
+                {
+                    var isChecked = reader.GetBoolean(0); count++; if (isChecked) checkedCount++;
+                    totals.Add(new(Guid.Empty, group.Key, "", isChecked, Number(reader, 1), Number(reader, 2), null, null, 0, default, default));
+                }
+            }
+            foreach (var request in group)
+                results.Add(new(request, definition, request.Limit == 0 ? [] : await Items(connection, transaction, group.Key, new(request.Filter, Limit: request.Limit), token), count, checkedCount, totals.Result));
+        }
+        await transaction.CommitAsync(token); return results;
+    }
     public async Task<IReadOnlyList<ListDefinition>> GetDefinitionsAsync(WorkspaceContext workspace, CancellationToken token)
     {
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
@@ -29,11 +58,16 @@ public sealed class SqliteListRepository : IListRepository
         var definition = (await Definitions(connection, transaction, id, token)).SingleOrDefault() ?? throw new ListValidationException("This List is no longer available in this profile.");
         return new(definition, await Items(connection, transaction, id, null, token));
     }
-    private static async Task<IReadOnlyList<ListDefinition>> Definitions(SqliteConnection connection, SqliteTransaction? transaction, Guid? id, CancellationToken token)
+    private static async Task<IReadOnlyList<ListDefinition>> Definitions(SqliteConnection connection, SqliteTransaction? transaction, Guid? id, CancellationToken token, IReadOnlyList<Guid>? ids = null)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT w.Id,w.Title,w.CreatedAtUtc,w.UpdatedAtUtc,w.ArchivedAtUtc,w.DeletedAtUtc,l.Description,l.ShowQuantity,l.ShowPrices,l.CurrencyCode FROM Lists l JOIN WorkspaceItems w ON w.Id=l.ItemId" + (id.HasValue ? " WHERE l.ItemId=$id" : "") + " ORDER BY w.Title,w.Id;";
         if (id.HasValue) Add(command, "$id", id);
+        if (ids is not null)
+        {
+            var parameters = ids.Select((value, index) => { var name = "$list" + index; Add(command, name, value); return name; });
+            command.CommandText = command.CommandText.Replace(" ORDER BY", " WHERE l.ItemId IN (" + string.Join(",", parameters) + ") ORDER BY");
+        }
         var result = new List<ListDefinition>(); using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) result.Add(new(new(Guid.Parse(reader.GetString(0)), WorkspaceItemType.List, reader.GetString(1), Utc(reader, 2)!.Value, Utc(reader, 3)!.Value, Utc(reader, 4), Utc(reader, 5)), reader.GetString(6), reader.GetBoolean(7), reader.GetBoolean(8), Text(reader, 9)));
         return result;

@@ -16,7 +16,7 @@ public sealed partial class TrackerTests
     private RecurrenceService WidgetRecurrence() => new(new SqliteTaskRepository(), current, gate, clock, NullLogger<RecurrenceService>.Instance);
     private EventService WidgetEvents() => new(new SqliteEventRepository(), current, gate, clock, NullLogger<EventService>.Instance);
     private WidgetWorkspaceViewModel WidgetModel(NavigationService? nav = null, IWidgetService? source = null, ITrackerAnalyticsService? charts = null) =>
-        new(source ?? Widgets(), JournalTasks(), WidgetRecurrence(), service, charts ?? Analytics(), WidgetEvents(), Journals(), Pages(), current, nav ?? new(), clock, NullLogger<WidgetWorkspaceViewModel>.Instance);
+        new(source ?? Widgets(), JournalTasks(), WidgetRecurrence(), service, charts ?? Analytics(), WidgetEvents(), Journals(), Pages(), current, nav ?? new(), clock, NullLogger<WidgetWorkspaceViewModel>.Instance, Lists());
     private Task<WidgetPage> WEdit(PageItem page, WidgetEdit edit) => Widgets().EditAsync(PRef(page), edit);
     private async Task<WidgetInstance> WAdd(PageItem page, WorkspaceItem source, WidgetType type = WidgetType.Task, WidgetMode mode = WidgetMode.Card, Guid? host = null, WidgetChartSettings? chart = null)
     {
@@ -32,7 +32,7 @@ public sealed partial class TrackerTests
         var page = Guid.NewGuid(); var block = Guid.NewGuid();
         await Sql($"INSERT INTO WorkspaceItems VALUES('{page}',5,'Training','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00',NULL,NULL);INSERT INTO Pages VALUES('{page}',NULL,0,NULL);INSERT INTO PageCanvasSettings VALUES('{page}',0,125);INSERT INTO PageCanvasItems VALUES('{block}','{page}',NULL,0,24,24,192,128,'','2026-10-01T00:00:00+00:00','2026-10-01T00:00:00+00:00');", legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(13L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(11L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
+        Assert.Equal(14L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(11L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(block.ToString(), await Sql("SELECT Id FROM PageCanvasItems;", legacy)); Assert.Equal(125L, await Sql("SELECT ZoomPercent FROM PageCanvasSettings;", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM WidgetInstances;", legacy));
     }
     [Fact]

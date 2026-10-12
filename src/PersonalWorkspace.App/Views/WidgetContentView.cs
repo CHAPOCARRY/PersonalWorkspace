@@ -47,6 +47,7 @@ public sealed class WidgetContentView : UserControl
         interactions.Clear(); var item = row!;
         AutomationProperties.SetAutomationId(this, "Widget_" + item.Widget.Id.ToString("N"));
         AutomationProperties.SetName(this, item.Widget.Type + ": " + item.Title);
+        if (item.Widget.Type == WidgetType.List) AutomationProperties.SetName(this, "List widget, " + item.Title);
         var root = new Grid { RowSpacing = 4 }; root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
         var headerGrid = new Grid(); headerGrid.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); headerGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var type = Text(item.Widget.Type == WidgetType.TrackerChart ? "Tracker chart" : item.Widget.Type == WidgetType.PageLink ? "Page link" : item.Widget.Type.ToString());
@@ -66,6 +67,26 @@ public sealed class WidgetContentView : UserControl
         var title = Text(item.Title, true); title.TextWrapping = TextWrapping.NoWrap; title.TextTrimming = TextTrimming.CharacterEllipsis; ToolTipService.SetToolTip(title, item.Title); body.Children.Add(title);
         if (item.Lifecycle.Length > 0) body.Children.Add(Text(item.Lifecycle));
         body.Children.Add(Text(item.Summary));
+        foreach (var listItem in item.ListItems)
+        {
+            var label = new StackPanel { Spacing = 2, Opacity = listItem.Opacity };
+            label.Children.Add(Text(listItem.Title));
+            if (item.ListMode == WidgetMode.Shopping && listItem.Detail.Length > 0) label.Children.Add(Text(listItem.Detail));
+            var check = new CheckBox { Content = label, IsChecked = listItem.IsChecked, HorizontalAlignment = HorizontalAlignment.Stretch };
+            AutomationProperties.SetName(check, listItem.CheckLabel + " in " + item.Title);
+            check.Click += async (_, _) => { check.IsChecked = listItem.IsChecked; await model!.CheckListItemAsync(item, listItem); };
+            body.Children.Add(check); interactions.Add(check);
+        }
+        if (item.QuickAdd)
+        {
+            var input = new TextBox { PlaceholderText = "Add item…", Text = item.Input, MaxLength = 200 };
+            AutomationProperties.SetName(input, "Add item to " + item.Title); AutomationProperties.SetAutomationId(input, "WidgetListAdd_" + item.Widget.Id.ToString("N"));
+            input.TextChanged += (_, _) => item.Input = input.Text;
+            input.KeyDown += async (_, args) => { if (args.Key == Windows.System.VirtualKey.Enter) { args.Handled = true; await model!.QuickAddAsync(item); } };
+            body.Children.Add(input); interactions.Add(input);
+            var add = new Button { Content = "Add item" }; AutomationProperties.SetName(add, "Add item to " + item.Title);
+            add.Click += async (_, _) => await model!.QuickAddAsync(item); body.Children.Add(add); interactions.Add(add);
+        }
         if (item.CanComplete)
         {
             var check = new CheckBox { Content = item.Done ? "Done — reopen" : "Complete Task", IsChecked = item.Done };

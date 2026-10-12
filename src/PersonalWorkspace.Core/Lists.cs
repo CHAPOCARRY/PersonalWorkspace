@@ -23,6 +23,12 @@ public sealed record ListItem(Guid Id, Guid ListId, string Title, bool IsChecked
 public sealed record ListItemReference(Guid ProfileId, Guid ListId, Guid ItemId);
 public sealed record ListItemQuery(ListFilter Filter = ListFilter.All, string Title = "", int Offset = 0, int Limit = 200);
 public sealed record ListTotals(decimal Total, decimal Remaining);
+public sealed record ListViewRequest(Guid ListId, ListFilter Filter = ListFilter.All, int Limit = 50);
+public sealed record ListViewData(ListViewRequest Request, ListDefinition Definition, IReadOnlyList<ListItem> Items, int Count, int CheckedCount, ListTotals Totals)
+{
+    public int UncheckedCount => Count - CheckedCount;
+    public int MatchingCount => Request.Filter switch { ListFilter.Checked => CheckedCount, ListFilter.Unchecked => UncheckedCount, _ => Count };
+}
 public sealed record ListSnapshot(ListDefinition Definition, IReadOnlyList<ListItem> Items)
 {
     public ListTotals Totals => ListRules.Totals(Items);
@@ -38,6 +44,7 @@ public sealed class ListState(ListSnapshot? snapshot)
 }
 public interface IListRepository
 {
+    Task<IReadOnlyList<ListViewData>> ReadViewsAsync(WorkspaceContext workspace, IReadOnlyList<ListViewRequest> requests, CancellationToken token);
     Task<IReadOnlyList<ListDefinition>> GetDefinitionsAsync(WorkspaceContext workspace, CancellationToken token);
     Task<ListSnapshot> ReadAsync(WorkspaceContext workspace, Guid id, CancellationToken token);
     Task<IReadOnlyList<ListItem>> GetItemsAsync(WorkspaceContext workspace, Guid id, ListItemQuery query, CancellationToken token);
@@ -45,6 +52,7 @@ public interface IListRepository
 }
 public interface IListService
 {
+    Task<IReadOnlyList<ListViewData>> ReadViewsAsync(Guid profile, IReadOnlyList<ListViewRequest> requests, CancellationToken token = default);
     Task<IReadOnlyList<ListDefinition>> GetDefinitionsAsync(Guid profile, CancellationToken token = default);
     Task<ListSnapshot> ReadAsync(WorkspaceItemReference list, CancellationToken token = default);
     Task<IReadOnlyList<ListItem>> GetItemsAsync(WorkspaceItemReference list, ListItemQuery query, CancellationToken token = default);
@@ -107,13 +115,20 @@ public static class ListRules
     }
     public static ListTotals Totals(IEnumerable<ListItem> items)
     {
-        BigInteger total = 0, remaining = 0;
-        foreach (var item in items)
+        var totals = new TotalAccumulator(); foreach (var item in items) totals.Add(item); return totals.Result;
+    }
+    // Streaming reads and full List snapshots share the same exact accumulation rules.
+    public sealed class TotalAccumulator
+    {
+        private BigInteger total, remaining;
+        public void Add(ListItem item)
+        {
             if (Subtotal(item) is { } value)
             {
                 var part = Parts(value); var scaled = part.Number * BigInteger.Pow(10, 28 - part.Scale);
                 total += scaled; if (!item.IsChecked) remaining += scaled;
             }
-        return new(Exact(total, 28), Exact(remaining, 28));
+        }
+        public ListTotals Result => new(Exact(total, 28), Exact(remaining, 28));
     }
 }
