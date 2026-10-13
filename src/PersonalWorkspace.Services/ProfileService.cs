@@ -6,7 +6,7 @@ namespace PersonalWorkspace.Services;
 
 public sealed class ProfileService(IProfileRepository repository, ISettingsService settings, IProfileFiles files,
     IWorkspaceInitializer workspaces, CurrentProfile current, ILogger<ProfileService> logger,
-    IWorkspaceOperationGate workspaceGate) : IProfileService, IDisposable
+    IWorkspaceOperationGate workspaceGate, IWorkspaceMaintenance? maintenance = null) : IProfileService, IDisposable
 {
     private readonly SemaphoreSlim gate = new(1, 1);
 
@@ -122,6 +122,7 @@ public sealed class ProfileService(IProfileRepository repository, ISettingsServi
     private async Task OpenAsync(Profile profile, CancellationToken cancellationToken)
     {
         await workspaces.InitializeAsync(profile.Id, create: false, cancellationToken);
+        if (maintenance is not null) await maintenance.RecoverAsync(profile.Id, cancellationToken);
         var opened = profile with { LastOpenedAtUtc = DateTimeOffset.UtcNow };
         await repository.SelectAsync(opened, cancellationToken);
         // Only publish the new context after workspace validation and metadata commit succeed.

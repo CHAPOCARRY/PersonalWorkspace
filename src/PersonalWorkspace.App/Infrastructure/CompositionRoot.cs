@@ -21,6 +21,14 @@ internal static class CompositionRoot
         services.AddSingleton<ISettingsService, SqliteSettingsService>();
         services.AddSingleton<IWorkspaceOperationGate, WorkspaceOperationGate>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<AssetPaths>();
+        services.AddSingleton<IAssetFileStore, AssetFileStore>();
+        services.AddSingleton<IAssetRepository, SqliteContentRepository>();
+        services.AddSingleton<IRichContentRepository, SqliteContentRepository>();
+        services.AddSingleton<AssetService>();
+        services.AddSingleton<IAssetService>(provider => provider.GetRequiredService<AssetService>());
+        services.AddSingleton<IWorkspaceMaintenance>(provider => provider.GetRequiredService<AssetService>());
+        services.AddSingleton<IRichContentService, RichContentService>();
         services.AddSingleton<ITaskRepository, SqliteTaskRepository>();
         services.AddSingleton<ITaskService, TaskService>();
         services.AddSingleton<IRecurrenceRepository, SqliteTaskRepository>();
