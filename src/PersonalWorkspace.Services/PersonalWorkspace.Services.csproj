@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="../PersonalWorkspace.Core/PersonalWorkspace.Core.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Markdig" Version="1.4.0" />
   </ItemGroup>
 </Project>

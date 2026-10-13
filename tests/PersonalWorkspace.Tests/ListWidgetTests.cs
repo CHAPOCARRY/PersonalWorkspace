@@ -40,7 +40,7 @@ public sealed partial class TrackerTests
         foreach (var table in tables) before[table] = await TableRows(legacy, table);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
         foreach (var table in tables) Assert.Equal(before[table], await TableRows(legacy, table));
-        Assert.Equal(14L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(15L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(13L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Null(await Sql("PRAGMA foreign_key_check;", legacy));
         Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM WidgetListSettings;", legacy));
