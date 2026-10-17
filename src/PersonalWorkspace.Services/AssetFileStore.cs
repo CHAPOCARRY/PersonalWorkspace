@@ -5,6 +5,14 @@ namespace PersonalWorkspace.Services;
 
 public sealed class AssetFileStore(AssetPaths paths) : IAssetFileStore
 {
+    public async Task UseFileAsync(Guid profile, Asset asset, IAssetFileConsumer consumer, CancellationToken token)
+    {
+        AssetPaths.ValidateIdentity(asset.Id, asset.StorageRelativePath);
+        var path = paths.Resolve(profile, asset.StorageRelativePath);
+        if (!File.Exists(path)) throw new ContentValidationException("The attachment file is unavailable.");
+        token.ThrowIfCancellationRequested();
+        await consumer.UseAsync(path, asset, token);
+    }
     public void CheckImportDestination(Guid profile, AssetImportJob job)
     {
         AssetPaths.ValidateIdentity(job.AssetId, job.StorageRelativePath);

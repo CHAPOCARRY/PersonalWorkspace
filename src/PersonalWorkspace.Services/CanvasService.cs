@@ -3,10 +3,17 @@ using PersonalWorkspace.Core;
 
 namespace PersonalWorkspace.Services;
 
-public sealed class CanvasService(ICanvasRepository repository, ICurrentProfile current, IWorkspaceOperationGate gate, TimeProvider clock, ILogger<CanvasService> logger) : ICanvasService
+public sealed class CanvasService(ICanvasRepository repository, ICurrentProfile current, IWorkspaceOperationGate gate, TimeProvider clock, ILogger<CanvasService> logger, IWorkspaceMaintenance? maintenance = null) : ICanvasService
 {
     public Task<CanvasSnapshot> GetAsync(WorkspaceItemReference page, CancellationToken token = default) => Run(page, w => repository.GetAsync(w, page.ItemId, token), token);
-    public Task<CanvasSnapshot> EditAsync(WorkspaceItemReference page, CanvasEdit edit, CancellationToken token = default) => Run(page, w => repository.EditAsync(w, page.ItemId, before => CanvasLayout.Apply(before, edit, clock.GetUtcNow()), token), token);
+    public Task<CanvasSnapshot> EditAsync(WorkspaceItemReference page, CanvasEdit edit, CancellationToken token = default) => Run(page, async w =>
+    {
+        var result = await repository.EditAsync(w, page.ItemId, before => CanvasLayout.Apply(before, edit, clock.GetUtcNow()), token);
+        if (edit is DeleteCanvasItems && maintenance is not null)
+            try { await maintenance.RecoverAsync(page.ProfileId, CancellationToken.None); }
+            catch (Exception e) { logger.LogWarning(e, "Block removal committed; Asset cleanup remains queued."); }
+        return result;
+    }, token);
     private async Task<CanvasSnapshot> Run(WorkspaceItemReference page, Func<WorkspaceContext, Task<CanvasSnapshot>> action, CancellationToken token)
     {
         using var lease = await gate.EnterAsync(token);

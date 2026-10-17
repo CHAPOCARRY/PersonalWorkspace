@@ -39,7 +39,8 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         await Owner(c, tx, owner, true, token);
         await Execute(c, tx, "INSERT INTO AssetImports VALUES($id,$path)", token, ("id", job.AssetId), ("path", job.StorageRelativePath)); return true;
     }, token);
-    public Task<AssetAttachment> CompleteImportAsync(WorkspaceContext w, Guid owner, Asset asset, CancellationToken token) => Run(w, true, async (c, tx) =>
+    public Task<AssetAttachment> CompleteImportAsync(WorkspaceContext w, Guid owner, Asset asset, CancellationToken token) => Run(w, true, (c, tx) => CompleteImport(c, tx, owner, asset, token), token);
+    internal static async Task<AssetAttachment> CompleteImport(SqliteConnection c, SqliteTransaction tx, Guid owner, Asset asset, CancellationToken token)
     {
         await Owner(c, tx, owner, true, token);
         using (var job = Command(c, tx, "SELECT COUNT(*) FROM AssetImports WHERE AssetId=$id AND StorageRelativePath=$path", ("id", asset.Id), ("path", asset.StorageRelativePath)))
@@ -48,7 +49,7 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
             ("id", asset.Id), ("path", asset.StorageRelativePath), ("name", asset.OriginalFileName), ("type", asset.MediaType), ("size", asset.ByteLength), ("hash", asset.ContentHash), ("utc", asset.CreatedAtUtc), ("width", asset.PixelWidth), ("height", asset.PixelHeight));
         var reference = await AssetLink(c, tx, owner, asset.Id, asset.CreatedAtUtc, token);
         await Execute(c, tx, "DELETE FROM AssetImports WHERE AssetId=$id", token, ("id", asset.Id)); return new AssetAttachment(reference, asset);
-    }, token);
+    }
     public Task<Asset?> FindAsync(WorkspaceContext w, Guid id, CancellationToken token) => Run(w, false, (c, tx) => AssetById(c, tx, id, token), token);
     public Task<IReadOnlyList<Asset>> AssetsAsync(WorkspaceContext w, bool pendingOnly, CancellationToken token) => Run<IReadOnlyList<Asset>>(w, false, async (c, tx) =>
     {
@@ -64,7 +65,7 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
     {
         await Execute(c, tx, import ? "DELETE FROM AssetImports WHERE AssetId=$id AND NOT EXISTS(SELECT 1 FROM Assets WHERE Id=$id)" : "DELETE FROM Assets WHERE Id=$id AND PendingDelete=1 AND NOT EXISTS(SELECT 1 FROM AssetReferences WHERE AssetId=$id)", token, ("id", id)); return true;
     }, token);
-    private static async Task<AssetReference> AssetLink(SqliteConnection c, SqliteTransaction tx, Guid owner, Guid asset, DateTimeOffset now, CancellationToken token)
+    internal static async Task<AssetReference> AssetLink(SqliteConnection c, SqliteTransaction tx, Guid owner, Guid asset, DateTimeOffset now, CancellationToken token)
     {
         await Owner(c, tx, owner, true, token);
         var existing = await AssetById(c, tx, asset, token);
@@ -91,7 +92,7 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
     }, token);
     public Task RemoveAsync(WorkspaceContext w, Guid reference, CancellationToken token) => Remove(w, reference, false, token);
 
-    private static async Task<RichTextDocument?> DocumentById(SqliteConnection c, SqliteTransaction tx, Guid id, CancellationToken token)
+    internal static async Task<RichTextDocument?> DocumentById(SqliteConnection c, SqliteTransaction tx, Guid id, CancellationToken token)
     {
         using var cmd = Command(c, tx, "SELECT * FROM RichTextDocuments WHERE Id=$id", ("id", id)); using var r = await cmd.ExecuteReaderAsync(token);
         return await r.ReadAsync(token) ? DocumentRow(r) : null;
@@ -103,12 +104,13 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         var reference = new RichTextReference(Guid.NewGuid(), document, owner, now);
         await Execute(c, tx, "INSERT INTO RichTextReferences VALUES($id,$document,$owner,$utc)", token, ("id", reference.Id), ("document", document), ("owner", owner), ("utc", now)); return reference;
     }
-    public Task<RichTextAttachment> CreateAsync(WorkspaceContext w, Guid owner, RichTextDocument document, CancellationToken token) => Run(w, true, async (c, tx) =>
+    public Task<RichTextAttachment> CreateAsync(WorkspaceContext w, Guid owner, RichTextDocument document, CancellationToken token) => Run(w, true, (c, tx) => CreateDocument(c, tx, owner, document, token), token);
+    internal static async Task<RichTextAttachment> CreateDocument(SqliteConnection c, SqliteTransaction tx, Guid owner, RichTextDocument document, CancellationToken token)
     {
         await Owner(c, tx, owner, true, token);
         await Execute(c, tx, "INSERT INTO RichTextDocuments VALUES($id,$content,$format,$version,$created,$updated)", token, ("id", document.Id), ("content", document.Content), ("format", document.Format), ("version", document.FormatVersion), ("created", document.CreatedAtUtc), ("updated", document.UpdatedAtUtc));
         return new RichTextAttachment(await DocumentLink(c, tx, owner, document.Id, document.CreatedAtUtc, token), document);
-    }, token);
+    }
     Task<RichTextDocument?> IRichContentRepository.FindAsync(WorkspaceContext w, Guid document, CancellationToken token) => Run(w, false, (c, tx) => DocumentById(c, tx, document, token), token);
     Task<RichTextReference> IRichContentRepository.LinkAsync(WorkspaceContext w, Guid owner, Guid document, DateTimeOffset now, CancellationToken token) => Run(w, true, (c, tx) => DocumentLink(c, tx, owner, document, now, token), token);
     Task IRichContentRepository.RemoveAsync(WorkspaceContext w, Guid reference, CancellationToken token) => Remove(w, reference, true, token);

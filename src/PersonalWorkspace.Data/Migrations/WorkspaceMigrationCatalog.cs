@@ -235,6 +235,7 @@ public static class WorkspaceMigrationCatalog
         WidgetMigration.Definition,
         ListMigration.Definition,
         ListWidgetMigration.Definition,
-        RichContentMigration.Definition
+        RichContentMigration.Definition,
+        ContentWidgetMigration.Definition
     ];
 }

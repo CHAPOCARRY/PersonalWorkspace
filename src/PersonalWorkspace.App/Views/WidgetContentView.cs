@@ -17,12 +17,18 @@ public sealed class WidgetContentView : UserControl
     private readonly List<Control> interactions = [];
     private Button? actions;
     private TextBlock? error;
+    private RichContentView? richView;
+    private AssetContentView? assetView;
     public Border Header { get; private set; } = new();
     public Action<WidgetContent>? ConfigureRequested { get; set; }
     public WidgetContentView()
     {
         IsTabStop = false;
-        SizeChanged += (_, _) => Clip = new RectangleGeometry { Rect = new(0, 0, Math.Max(0, ActualWidth), Math.Max(0, ActualHeight)) };
+        SizeChanged += (_, _) =>
+        {
+            Clip = new RectangleGeometry { Rect = new(0, 0, Math.Max(0, ActualWidth), Math.Max(0, ActualHeight)) };
+            if (assetView is not null && row?.Widget.Type == WidgetType.Image) assetView.Height = Math.Max(64, ActualHeight - 88);
+        };
         Unloaded += (_, _) => { if (row is not null) row.PropertyChanged -= RowChanged; };
         Loaded += (_, _) => { if (row is not null) { row.PropertyChanged -= RowChanged; row.PropertyChanged += RowChanged; } };
     }
@@ -37,6 +43,8 @@ public sealed class WidgetContentView : UserControl
             row = content; row.PropertyChanged += RowChanged; Build();
         }
         foreach (var control in interactions) control.IsEnabled = owner.CanInteract;
+        if (richView is not null) richView.Editable = owner.CanInteract;
+        if (assetView is not null) assetView.CanOpen = owner.CanInteract;
         if (actions is not null) actions.Visibility = canEditLayout ? Visibility.Visible : Visibility.Collapsed;
         Header.Background = (Brush)Application.Current.Resources[canEditLayout ? "SurfaceSecondary" : "Surface"];
     }
@@ -44,7 +52,7 @@ public sealed class WidgetContentView : UserControl
     private static TextBlock Text(string value, bool title = false) => new() { Text = value, TextWrapping = TextWrapping.Wrap, FontSize = title ? 16 : 12, Foreground = (Brush)Application.Current.Resources[title ? "TextPrimary" : "TextSecondary"] };
     private void Build()
     {
-        interactions.Clear(); var item = row!;
+        interactions.Clear(); richView = null; assetView = null; var item = row!;
         AutomationProperties.SetAutomationId(this, "Widget_" + item.Widget.Id.ToString("N"));
         AutomationProperties.SetName(this, item.Widget.Type + ": " + item.Title);
         if (item.Widget.Type == WidgetType.List) AutomationProperties.SetName(this, "List widget, " + item.Title);
@@ -57,7 +65,7 @@ public sealed class WidgetContentView : UserControl
         actions.PointerPressed += (_, args) => args.Handled = true;
         var flyout = new MenuFlyout();
         void Action(string label, Func<Task> action) { var button = new MenuFlyoutItem { Text = label }; button.Click += async (_, _) => await action(); flyout.Items.Add(button); }
-        Action(item.Source is null ? "Replace source / Configure" : "Configure Widget", () => { ConfigureRequested?.Invoke(item); return Task.CompletedTask; });
+        Action(item.Source is null && !item.IsContent ? "Replace source / Configure" : "Configure Widget", () => { ConfigureRequested?.Invoke(item); return Task.CompletedTask; });
         Action("Duplicate Widget", async () => await model!.EditAsync(new DuplicateWidget(item.Widget.Id)));
         Action("Remove Widget content", async () => await model!.EditAsync(new RemoveWidget(item.Widget.Id)));
         Action("Remove from Page", async () => await model!.EditAsync(new RemoveWidget(item.Widget.Id, true)));
@@ -67,6 +75,22 @@ public sealed class WidgetContentView : UserControl
         var title = Text(item.Title, true); title.TextWrapping = TextWrapping.NoWrap; title.TextTrimming = TextTrimming.CharacterEllipsis; ToolTipService.SetToolTip(title, item.Title); body.Children.Add(title);
         if (item.Lifecycle.Length > 0) body.Children.Add(Text(item.Lifecycle));
         body.Children.Add(Text(item.Summary));
+        if (item.RichText is { } rich)
+        {
+            richView = new(rich.Document, async text => { await model!.SaveRichTextAsync(item, text); return item.Error is null; }, async uri =>
+            {
+                if (!model!.CanInteract) return;
+                if (uri.Scheme == "personalworkspace") await model.OpenInternalLinkAsync(item, Guid.Parse(uri.AbsolutePath.TrimStart('/')));
+                else if (!await Windows.System.Launcher.LaunchUriAsync(uri)) item.Error = "Windows could not open this link.";
+            });
+            body.Children.Add(richView);
+        }
+        if (item.Asset is { } asset && item.Widget.Asset is { } settings)
+        {
+            assetView = new(asset.Asset, settings, item.Widget.Type == WidgetType.Image, consumer => model!.UseAssetAsync(item, consumer), message => item.Error = message);
+            if (item.Widget.Type == WidgetType.Image && ActualHeight > 0) assetView.Height = Math.Max(64, ActualHeight - 88);
+            body.Children.Add(assetView);
+        }
         foreach (var listItem in item.ListItems)
         {
             var label = new StackPanel { Spacing = 2, Opacity = listItem.Opacity };
