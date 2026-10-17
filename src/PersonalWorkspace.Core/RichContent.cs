@@ -21,6 +21,8 @@ public sealed class ContentOperationException(string message, Exception? inner =
 
 public interface IAssetService
 {
+    Task<AssetAttachment> ImportToAsync(WorkspaceItemReference owner, string sourcePath, IAssetImportTarget target, CancellationToken token = default);
+    Task UseFileAsync(ContentKey asset, IAssetFileConsumer consumer, CancellationToken token = default);
     Task<AssetAttachment> ImportAsync(WorkspaceItemReference owner, string sourcePath, CancellationToken token = default);
     Task<Asset> GetAsync(ContentKey asset, CancellationToken token = default);
     Task<IReadOnlyList<AssetAttachment>> ListAsync(WorkspaceItemReference owner, CancellationToken token = default);
@@ -43,11 +45,22 @@ public interface IRichContentService
 }
 public interface IAssetFileStore
 {
+    Task UseFileAsync(Guid profile, Asset asset, IAssetFileConsumer consumer, CancellationToken token) => throw new NotSupportedException();
     void CheckImportDestination(Guid profile, AssetImportJob job);
     Task<AssetFileInfo> ImportAsync(Guid profile, AssetImportJob job, string sourcePath, CancellationToken token);
     void Delete(Guid profile, string relativePath);
     Task CopyToAsync(Guid profile, Asset asset, Stream destination, CancellationToken token);
     Task<string?> CheckIntegrityAsync(Guid profile, Asset asset, CancellationToken token);
+}
+// Called under the originating workspace gate. Implementations commit through shared content persistence.
+public interface IAssetImportTarget
+{
+    Task<AssetAttachment> CompleteAsync(WorkspaceContext workspace, Guid owner, Asset asset, CancellationToken token);
+}
+// Native consumers may open the validated file only during this guarded call.
+public interface IAssetFileConsumer
+{
+    Task UseAsync(string validatedPath, Asset asset, CancellationToken token);
 }
 public interface IWorkspaceMaintenance
 {

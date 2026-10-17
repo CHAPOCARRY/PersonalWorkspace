@@ -4,7 +4,7 @@ using PersonalWorkspace.Core;
 
 namespace PersonalWorkspace.Data;
 
-public sealed class SqliteWidgetRepository : IWidgetRepository
+public sealed partial class SqliteWidgetRepository : IWidgetRepository
 {
     public async Task<WidgetPage> ReadAsync(WorkspaceContext workspace, Guid pageId, CancellationToken token)
     {
@@ -17,15 +17,18 @@ public sealed class SqliteWidgetRepository : IWidgetRepository
         var canvas = await SqliteCanvasRepository.Read(connection, transaction, pageId, token);
         var widgets = new List<WidgetInstance>();
         using (var command = Command(connection, transaction, """
-            SELECT w.Id,w.CanvasItemId,w.WidgetType,w.SourceItemId,w.PresentationMode,w.CreatedAtUtc,w.UpdatedAtUtc,s.ChartKind,s.RangePreset,l.ItemFilter
+            SELECT w.Id,w.CanvasItemId,w.WidgetType,w.SourceItemId,w.PresentationMode,w.CreatedAtUtc,w.UpdatedAtUtc,s.ChartKind,s.RangePreset,l.ItemFilter,r.ReferenceId,a.ReferenceId,a.FitMode,a.AltText
             FROM WidgetInstances w JOIN PageCanvasItems c ON c.Id=w.CanvasItemId LEFT JOIN WidgetChartSettings s ON s.WidgetId=w.Id
-            LEFT JOIN WidgetListSettings l ON l.WidgetId=w.Id WHERE c.PageId=$page ORDER BY w.CreatedAtUtc,w.Id;
+            LEFT JOIN WidgetListSettings l ON l.WidgetId=w.Id LEFT JOIN WidgetRichTextSettings r ON r.WidgetId=w.Id
+            LEFT JOIN WidgetAssetSettings a ON a.WidgetId=w.Id WHERE c.PageId=$page ORDER BY w.CreatedAtUtc,w.Id;
             """, pageId))
         using (var reader = await command.ExecuteReaderAsync(token)) while (await reader.ReadAsync(token)) widgets.Add(new(
             Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), (WidgetType)reader.GetInt32(2), reader.IsDBNull(3) ? null : Guid.Parse(reader.GetString(3)),
             (WidgetMode)reader.GetInt32(4), Utc(reader, 5)!.Value, Utc(reader, 6)!.Value,
             reader.IsDBNull(7) ? null : new((WidgetChartKind)reader.GetInt32(7), (AnalyticsPreset)reader.GetInt32(8)),
-            reader.IsDBNull(9) ? null : new((ListFilter)reader.GetInt32(9))));
+            reader.IsDBNull(9) ? null : new((ListFilter)reader.GetInt32(9)),
+            reader.IsDBNull(10) ? null : new(Guid.Parse(reader.GetString(10))),
+            reader.IsDBNull(11) ? null : new(Guid.Parse(reader.GetString(11)), (ImageFitMode)reader.GetInt32(12), reader.GetString(13))));
         var priced = new HashSet<Guid>();
         using (var command = Command(connection, transaction, "SELECT ItemId FROM Lists WHERE ShowPrices=1 AND (ItemId=$source OR ItemId IN (SELECT w.SourceItemId FROM WidgetInstances w JOIN PageCanvasItems c ON c.Id=w.CanvasItemId WHERE c.PageId=$page));", pageId))
         {
@@ -52,6 +55,12 @@ public sealed class SqliteWidgetRepository : IWidgetRepository
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
         using var transaction = connection.BeginTransaction(deferred: false);
         var before = await Read(connection, transaction, pageId, sourceId, token); var after = change(new(before));
+        after = await PrepareContent(connection, transaction, pageId, before, after, null, token);
+        await Write(connection, transaction, pageId, before, after, token);
+        await transaction.CommitAsync(token); return after;
+    }
+    private static async Task Write(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, WidgetPage before, WidgetPage after, CancellationToken token)
+    {
         foreach (var removed in before.Widgets.Where(w => !after.Widgets.Any(a => a.Id == w.Id)))
         { using var command = Command(connection, transaction, "DELETE FROM WidgetInstances WHERE Id=$id;", pageId); Add(command, "$id", removed.Id); await command.ExecuteNonQueryAsync(token); }
         await SqliteCanvasRepository.Write(connection, transaction, pageId, before.Canvas, after.Canvas, token);
@@ -78,8 +87,8 @@ public sealed class SqliteWidgetRepository : IWidgetRepository
                 using var settings = Command(connection, transaction, "INSERT INTO WidgetListSettings(WidgetId,ItemFilter) VALUES($id,$filter) ON CONFLICT(WidgetId) DO UPDATE SET ItemFilter=excluded.ItemFilter;", pageId);
                 Add(settings, "$id", widget.Id); Add(settings, "$filter", (int)list.Filter); await settings.ExecuteNonQueryAsync(token);
             }
+            await WriteContent(connection, transaction, pageId, widget, before.Widgets.Any(w => w.Id == widget.Id), token);
         }
-        await transaction.CommitAsync(token); return after;
     }
     private static async Task<IReadOnlyList<WorkspaceItem>> Sources(SqliteCommand command, CancellationToken token)
     {

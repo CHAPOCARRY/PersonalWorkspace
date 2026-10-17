@@ -38,7 +38,7 @@ public sealed partial class TrackerTests
             INSERT INTO WidgetInstances VALUES('{widget}','{block}',0,'{source}',0,'2026-10-08T00:00:00+00:00','2026-10-08T00:00:00+00:00');
             """, legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(15L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
+        Assert.Equal(16L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy)); Assert.Equal(12L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(widget.ToString(), await Sql("SELECT Id FROM WidgetInstances;", legacy)); Assert.Equal("Keep", await Sql("SELECT Description FROM Tasks;", legacy));
         Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM Lists;", legacy)); Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM ListItems;", legacy));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync(); using var command = global.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('Lists','ListItems');"; Assert.Equal(0L, await command.ExecuteScalarAsync());

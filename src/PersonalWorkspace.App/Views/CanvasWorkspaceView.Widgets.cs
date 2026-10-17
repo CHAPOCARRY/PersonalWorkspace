@@ -29,9 +29,15 @@ public sealed partial class CanvasWorkspaceView
         var ranges = new[] { new RangeChoice(AnalyticsPreset.SevenDays, "7 days"), new RangeChoice(AnalyticsPreset.ThirtyDays, "30 days"), new RangeChoice(AnalyticsPreset.NinetyDays, "90 days"), new RangeChoice(AnalyticsPreset.ThisMonth, "This month") };
         var range = new ComboBox { Header = "Range", ItemsSource = ranges, DisplayMemberPath = "Label", SelectedItem = ranges.Single(r => r.Value == (existing?.Widget.Chart?.Range ?? AnalyticsPreset.ThirtyDays)) };
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["Danger"] };
+        var chooseFile = new Button { Content = "Choose file…" };
+        var fileLabel = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var fit = new ComboBox { Header = "Image fit", ItemsSource = Enum.GetValues<ImageFitMode>(), SelectedItem = existing?.Widget.Asset?.Fit ?? ImageFitMode.Fit };
+        var alt = new TextBox { Header = "Alt text", Text = existing?.Widget.Asset?.AltText ?? "", MaxLength = 1000 };
+        string? selectedPath = null;
+        AutomationProperties.SetAutomationId(chooseFile, "WidgetChooseFile"); AutomationProperties.SetAutomationId(fit, "WidgetImageFit"); AutomationProperties.SetAutomationId(alt, "WidgetImageAlt");
         var hint = new TextBlock { Text = "Sources stay in their libraries. Checkbox interaction applies to ordinary checkbox Tasks; recurring Tasks use today's existing occurrence.", TextWrapping = TextWrapping.Wrap, Style = (Style)Application.Current.Resources["BodyStyle"] };
         foreach (var pair in new[] { ((DependencyObject)type, "WidgetType"), (filter, "WidgetSourceFilter"), (source, "WidgetSource"), (mode, "WidgetMode"), (chart, "WidgetChartKind"), (range, "WidgetChartRange"), (itemFilter, "WidgetListFilter"), (error, "WidgetPickerError") }) AutomationProperties.SetAutomationId(pair.Item1, pair.Item2);
-        var stack = new StackPanel { Spacing = 8, Width = 400 }; foreach (var control in new UIElement[] { type, filter, source, mode, itemFilter, chart, range, hint, error }) stack.Children.Add(control);
+        var stack = new StackPanel { Spacing = 8, Width = 400 }; foreach (var control in new UIElement[] { type, filter, source, mode, itemFilter, chart, range, chooseFile, fileLabel, fit, alt, hint, error }) stack.Children.Add(control);
         var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = existing is null ? "Add Widget" : "Configure Widget", Content = new ScrollViewer { Content = stack, MaxHeight = 540 }, PrimaryButtonText = existing is null ? "Add Widget" : "Save Widget", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
         var candidates = Array.Empty<SourceChoice>(); var generation = 0;
         void ListModes()
@@ -52,10 +58,16 @@ public sealed partial class CanvasWorkspaceView
         {
             var request = ++generation; dialog.IsPrimaryButtonEnabled = false; error.Text = "";
             if (type.SelectedItem is not WidgetType selectedType) return;
+            selectedPath = null; fileLabel.Text = "";
+            var content = WidgetRules.IsContent(selectedType);
+            filter.Visibility = source.Visibility = mode.Visibility = content ? Visibility.Collapsed : Visibility.Visible;
+            chooseFile.Visibility = fileLabel.Visibility = existing is null && selectedType is WidgetType.Image or WidgetType.Attachment ? Visibility.Visible : Visibility.Collapsed;
+            fit.Visibility = alt.Visibility = existing is not null && selectedType == WidgetType.Image ? Visibility.Visible : Visibility.Collapsed;
             mode.ItemsSource = WidgetRules.Modes(selectedType); mode.SelectedItem = existing?.Widget.Mode ?? WidgetRules.Modes(selectedType)[0];
             chart.Visibility = range.Visibility = selectedType == WidgetType.TrackerChart ? Visibility.Visible : Visibility.Collapsed;
             itemFilter.Visibility = selectedType == WidgetType.List ? Visibility.Visible : Visibility.Collapsed;
             hint.Text = selectedType == WidgetType.List ? "List data stays canonical. Show up to 50 items in stored order. Counts and totals cover the whole List. Shopping requires prices. Compact shows a whole-List summary." : "Sources stay in their libraries. Checkbox interaction applies to ordinary checkbox Tasks; recurring Tasks use today's existing occurrence.";
+            if (content) hint.Text = selectedType == WidgetType.RichText ? "Create an empty text Widget, then use Edit, Save and Cancel. Markdown stays canonical." : selectedType == WidgetType.Image ? "PNG and JPEG images. Fit is the default; configure Fit/Fill and alt text after adding." : "Import a local file. Open uses its Windows default application.";
             try
             {
                 var list = await widgets.CandidatesAsync(selectedType);
@@ -65,6 +77,19 @@ public sealed partial class CanvasWorkspaceView
             catch (Exception) { if (request == generation) error.Text = "Sources could not be loaded. Reopen this picker and try again."; }
         }
         type.SelectionChanged += async (_, _) => await Load(); filter.TextChanged += (_, _) => Filter();
+        chooseFile.Click += async (_, _) =>
+        {
+            var chosenType = (WidgetType)type.SelectedItem; var request = generation;
+            try
+            {
+                var picker = new Windows.Storage.Pickers.FileOpenPicker();
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, Microsoft.UI.Win32Interop.GetWindowFromWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId));
+                foreach (var extension in chosenType == WidgetType.Image ? new[] { ".png", ".jpg", ".jpeg" } : new[] { "*" }) picker.FileTypeFilter.Add(extension);
+                var file = await picker.PickSingleFileAsync();
+                if (request == generation && widgets.Reference == reference && file is not null) { selectedPath = file.Path; fileLabel.Text = file.Name; }
+            }
+            catch (Exception) { error.Text = "The file picker could not be opened. Please try again."; }
+        };
         source.SelectionChanged += (_, _) => ListModes();
         mode.SelectionChanged += (_, _) => itemFilter.Visibility = type.SelectedItem is WidgetType.List && mode.SelectedItem is not WidgetMode.Compact ? Visibility.Visible : Visibility.Collapsed;
         dialog.PrimaryButtonClick += async (_, args) =>
@@ -75,12 +100,14 @@ public sealed partial class CanvasWorkspaceView
                 if (widgets.Reference != reference || !widgets.CanConfigure) { error.Text = "The Page changed or its layout is locked. Close this picker."; return; }
                 if (type.SelectedItem is not WidgetType selectedType || mode.SelectedItem is not WidgetMode selectedMode) return;
                 var chosen = source.SelectedItem as SourceChoice;
-                if (existing is null && chosen is null) { error.Text = "Choose a source item."; return; }
+                if (existing is null && !WidgetRules.IsContent(selectedType) && chosen is null) { error.Text = "Choose a source item."; return; }
+                if (existing is null && selectedType is WidgetType.Image or WidgetType.Attachment && selectedPath is null) { error.Text = "Choose a file."; return; }
                 var settings = selectedType == WidgetType.TrackerChart ? new WidgetChartSettings((WidgetChartKind)chart.SelectedItem, ((RangeChoice)range.SelectedItem).Value) : null;
                 var listSettings = selectedType == WidgetType.List ? new WidgetListSettings((ListFilter)itemFilter.SelectedItem) : null;
-                WidgetEdit edit = existing is null ? new AddWidget(selectedType, chosen!.Id, selectedMode, emptyBlock, parent, x, y, settings, listSettings)
+                WidgetEdit edit = existing is null ? new AddWidget(selectedType, WidgetRules.IsContent(selectedType) ? null : chosen!.Id, selectedMode, emptyBlock, parent, x, y, settings, listSettings)
+                    : selectedType == WidgetType.Image ? new ConfigureImageWidget(existing.Widget.Id, (ImageFitMode)fit.SelectedItem, alt.Text)
                     : new ConfigureWidget(existing.Widget.Id, selectedMode, settings, chosen?.Id, listSettings);
-                if (await widgets.EditAsync(edit)) args.Cancel = false; else error.Text = widgets.Error ?? "The Widget could not be saved.";
+                if (await widgets.EditAsync(edit, selectedPath)) args.Cancel = false; else error.Text = widgets.Error ?? "The Widget could not be saved.";
             }
             finally { deferral.Complete(); }
         };

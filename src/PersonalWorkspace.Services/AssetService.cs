@@ -6,7 +6,9 @@ namespace PersonalWorkspace.Services;
 public sealed class AssetService(IAssetRepository repository, IAssetFileStore files, IApplicationPaths paths, ICurrentProfile current, IWorkspaceOperationGate gate,
     TimeProvider clock, ILogger<AssetService> logger) : IAssetService, IWorkspaceMaintenance
 {
-    public Task<AssetAttachment> ImportAsync(WorkspaceItemReference owner, string sourcePath, CancellationToken token = default) => Run(owner.ProfileId, async w =>
+    public Task<AssetAttachment> ImportAsync(WorkspaceItemReference owner, string sourcePath, CancellationToken token = default) => Import(owner, sourcePath, null, token);
+    public Task<AssetAttachment> ImportToAsync(WorkspaceItemReference owner, string sourcePath, IAssetImportTarget target, CancellationToken token = default) => Import(owner, sourcePath, target, token);
+    private Task<AssetAttachment> Import(WorkspaceItemReference owner, string sourcePath, IAssetImportTarget? target, CancellationToken token) => Run(owner.ProfileId, async w =>
     {
         var name = AssetPaths.FileName(sourcePath); var id = Guid.NewGuid(); var job = new AssetImportJob(id, AssetPaths.Relative(id, name));
         files.CheckImportDestination(w.ProfileId, job);
@@ -15,7 +17,7 @@ public sealed class AssetService(IAssetRepository repository, IAssetFileStore fi
         {
             var info = await files.ImportAsync(w.ProfileId, job, sourcePath, token);
             var asset = new Asset(id, job.StorageRelativePath, name, info.MediaType, info.ByteLength, info.ContentHash, clock.GetUtcNow(), info.PixelWidth, info.PixelHeight);
-            return await repository.CompleteImportAsync(w, owner.ItemId, asset, token);
+            return target is null ? await repository.CompleteImportAsync(w, owner.ItemId, asset, token) : await target.CompleteAsync(w, owner.ItemId, asset, token);
         }
         catch
         {
@@ -43,6 +45,8 @@ public sealed class AssetService(IAssetRepository repository, IAssetFileStore fi
     public Task CopyToAsync(ContentKey asset, Stream destination, CancellationToken token = default) => Run(asset.ProfileId, async w =>
     { await files.CopyToAsync(w.ProfileId, await Find(w, asset.Id, token), destination, token); return true; }, token);
     public Task<AssetCleanupResult> CleanupAsync(Guid profile, CancellationToken token = default) => Run(profile, w => Cleanup(w, token), token);
+    public Task UseFileAsync(ContentKey asset, IAssetFileConsumer consumer, CancellationToken token = default) => Run(asset.ProfileId, async w =>
+    { await files.UseFileAsync(w.ProfileId, await Find(w, asset.Id, token), consumer, token); return true; }, token);
     async Task IWorkspaceMaintenance.RecoverAsync(Guid profile, CancellationToken token) => _ = await Cleanup(new(profile, paths.WorkspaceDatabase(profile)), token);
     private async Task RecoverImport(WorkspaceContext w, AssetImportJob job, CancellationToken token)
     {

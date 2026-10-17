@@ -1,12 +1,16 @@
 namespace PersonalWorkspace.Core;
 
-public enum WidgetType { Task, Tracker, TrackerChart, Event, Journal, PageLink, List }
+public enum WidgetType { Task, Tracker, TrackerChart, Event, Journal, PageLink, List, RichText, Image, Attachment }
 public enum WidgetMode { Card, Checkbox, Progress, CurrentValue, QuickEntry, Chart, TodaySummary, Checklist, Shopping, Compact }
 public enum WidgetChartKind { Line, Bar, Area }
 public sealed record WidgetChartSettings(WidgetChartKind Kind = WidgetChartKind.Line, AnalyticsPreset Range = AnalyticsPreset.ThirtyDays);
 public sealed record WidgetListSettings(ListFilter Filter = ListFilter.All);
+public enum ImageFitMode { Fit, Fill }
+public sealed record WidgetRichTextSettings(Guid ReferenceId);
+public sealed record WidgetAssetSettings(Guid ReferenceId, ImageFitMode Fit = ImageFitMode.Fit, string AltText = "");
 public sealed record WidgetInstance(Guid Id, Guid CanvasItemId, WidgetType Type, Guid? SourceItemId, WidgetMode Mode,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, WidgetChartSettings? Chart = null, WidgetListSettings? List = null);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, WidgetChartSettings? Chart = null, WidgetListSettings? List = null,
+    WidgetRichTextSettings? RichText = null, WidgetAssetSettings? Asset = null);
 public sealed record WidgetPage(CanvasSnapshot Canvas, IReadOnlyList<WidgetInstance> Widgets, IReadOnlyList<WorkspaceItem> Sources, IReadOnlySet<Guid>? PricedLists = null);
 public sealed class WidgetState(WidgetPage page)
 {
@@ -17,20 +21,23 @@ public sealed class WidgetState(WidgetPage page)
     public WidgetPage Snapshot() => new(Canvas, Widgets.Values.OrderBy(w => w.CreatedAtUtc).ThenBy(w => w.Id).ToArray(), Sources, PricedLists);
 }
 public abstract record WidgetEdit;
-public sealed record AddWidget(WidgetType Type, Guid Source, WidgetMode Mode, Guid? EmptyBlock = null, Guid? Parent = null,
+public sealed record AddWidget(WidgetType Type, Guid? Source, WidgetMode Mode, Guid? EmptyBlock = null, Guid? Parent = null,
     int X = 24, int Y = 24, WidgetChartSettings? Chart = null, WidgetListSettings? List = null) : WidgetEdit;
 public sealed record ConfigureWidget(Guid Id, WidgetMode Mode, WidgetChartSettings? Chart = null, Guid? Source = null, WidgetListSettings? List = null) : WidgetEdit;
 public sealed record ReplaceWidgetSource(Guid Id, Guid Source) : WidgetEdit;
 public sealed record RemoveWidget(Guid Id, bool RemoveBlock = false) : WidgetEdit;
 public sealed record DuplicateWidget(Guid Id) : WidgetEdit;
+public sealed record ConfigureImageWidget(Guid Id, ImageFitMode Fit, string AltText) : WidgetEdit;
 public interface IWidgetRepository
 {
+    Task<(WidgetPage Page, AssetAttachment Attachment)> ImportAsync(WorkspaceContext workspace, Guid page, Asset asset, AddWidget edit, DateTimeOffset now, CancellationToken token) => throw new NotSupportedException();
     Task<WidgetPage> ReadAsync(WorkspaceContext workspace, Guid pageId, CancellationToken token);
     Task<IReadOnlyList<WorkspaceItem>> CandidatesAsync(WorkspaceContext workspace, WorkspaceItemType type, Guid pageId, CancellationToken token);
     Task<WidgetPage> EditAsync(WorkspaceContext workspace, Guid pageId, Guid? sourceId, Func<WidgetState, WidgetPage> change, CancellationToken token);
 }
 public interface IWidgetService
 {
+    Task<WidgetPage> ImportAsync(WorkspaceItemReference page, AddWidget edit, string sourcePath, CancellationToken token = default) => throw new NotSupportedException();
     Task<WidgetPage> GetAsync(WorkspaceItemReference page, CancellationToken token = default);
     Task<IReadOnlyList<WorkspaceItem>> CandidatesAsync(WorkspaceItemReference page, WidgetType type, CancellationToken token = default);
     Task<WidgetPage> EditAsync(WorkspaceItemReference page, WidgetEdit edit, CancellationToken token = default);
@@ -40,6 +47,7 @@ public sealed class WidgetOperationException(string message, Exception inner) : 
 
 public static class WidgetRules
 {
+    public static bool IsContent(WidgetType type) => type is WidgetType.RichText or WidgetType.Image or WidgetType.Attachment;
     public static WorkspaceItemType SourceType(WidgetType type) => type switch
     {
         WidgetType.Task => WorkspaceItemType.Task, WidgetType.Tracker or WidgetType.TrackerChart => WorkspaceItemType.Tracker,
@@ -52,11 +60,12 @@ public static class WidgetRules
         WidgetType.Task => [WidgetMode.Card, WidgetMode.Checkbox, WidgetMode.Progress],
         WidgetType.Tracker => [WidgetMode.CurrentValue, WidgetMode.Progress, WidgetMode.QuickEntry],
         WidgetType.TrackerChart => [WidgetMode.Chart], WidgetType.Journal => [WidgetMode.TodaySummary],
-        WidgetType.Event or WidgetType.PageLink => [WidgetMode.Card], WidgetType.List => [WidgetMode.Checklist, WidgetMode.Shopping, WidgetMode.Compact], _ => []
+        WidgetType.Event or WidgetType.PageLink or WidgetType.RichText or WidgetType.Image or WidgetType.Attachment => [WidgetMode.Card], WidgetType.List => [WidgetMode.Checklist, WidgetMode.Shopping, WidgetMode.Compact], _ => []
     };
     public static (int Width, int Height) Size(WidgetType type) => type switch
     {
-        WidgetType.TrackerChart => (480, 320), WidgetType.PageLink => (256, 160), WidgetType.List => (400, 320), _ => (320, 240)
+        WidgetType.TrackerChart => (480, 320), WidgetType.PageLink => (256, 160), WidgetType.List => (400, 320),
+        WidgetType.RichText => (400, 320), WidgetType.Image => (400, 280), WidgetType.Attachment => (320, 200), _ => (320, 240)
     };
     public static WidgetMode[] ListModes(bool prices) => Modes(WidgetType.List).Where(m => prices || m != WidgetMode.Shopping).ToArray();
     public static void Validate(WidgetType type, WidgetMode mode, WidgetChartSettings? chart, WidgetListSettings? list = null)
@@ -78,8 +87,9 @@ public static class WidgetRules
     {
         if (!state.Canvas.PageActive || state.Canvas.Settings.LayoutLocked) throw new WidgetValidationException("Unlock an active Page before configuring its Widgets.");
         WidgetInstance Find(Guid id) => state.Widgets.GetValueOrDefault(id) ?? throw new WidgetValidationException("This Widget is no longer on this Page.");
-        void Source(WidgetType type, Guid id)
+        void Source(WidgetType type, Guid? id)
         {
+            if (IsContent(type)) { if (id is not null) throw new WidgetValidationException("Content Widgets have no WorkspaceItem source."); return; }
             var item = state.Sources.SingleOrDefault(s => s.Id == id);
             if (item is null || item.ItemType != SourceType(type) || item.ArchivedAtUtc is not null || item.DeletedAtUtc is not null)
                 throw new WidgetValidationException("Choose an active source of the correct type in this Profile.");
@@ -103,6 +113,11 @@ public static class WidgetRules
         }
         switch (edit)
         {
+            case ConfigureImageWidget image:
+                var imageWidget = Find(image.Id);
+                if (imageWidget.Type != WidgetType.Image || imageWidget.Asset is null || !Enum.IsDefined(image.Fit) || image.AltText.Length > 1000 || image.AltText.Any(char.IsControl))
+                    throw new WidgetValidationException("Choose Fit or Fill and alt text of up to 1,000 characters.");
+                Update(imageWidget, imageWidget with { Asset = imageWidget.Asset with { Fit = image.Fit, AltText = image.AltText.Trim() } }); break;
             case AddWidget add:
                 var chart = add.Type == WidgetType.TrackerChart ? add.Chart ?? new() : add.Chart;
                 var list = add.Type == WidgetType.List ? add.List ?? new() : add.List;

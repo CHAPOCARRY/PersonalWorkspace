@@ -20,12 +20,15 @@ public sealed class WidgetContent : ObservableObject
     public TrackerAnalyticsResult? Analytics { get; init; }
     public ListViewData? ListData { get; init; }
     public IReadOnlyList<ListItemRow> ListItems { get; init; } = [];
+    public RichTextAttachment? RichText { get; init; }
+    public AssetAttachment? Asset { get; init; }
+    public bool IsContent => WidgetRules.IsContent(Widget.Type);
     public WidgetMode ListMode => Widget.Mode == WidgetMode.Shopping && ListData?.Definition.ShowPrices != true ? WidgetMode.Checklist : Widget.Mode;
     public bool QuickAdd => SourceActive && ListData is not null && ListMode is WidgetMode.Checklist or WidgetMode.Shopping;
     public string Input { get; set; } = "";
     public string? Error { get => error; set => SetProperty(ref error, value); }
-    public bool SourceActive => Source is { ArchivedAtUtc: null, DeletedAtUtc: null };
-    public string Lifecycle => Source is null ? "Missing reference" : Source.DeletedAtUtc is not null ? "In Trash" : Source.ArchivedAtUtc is not null ? "Archived" : "";
+    public bool SourceActive => IsContent ? RichText is not null || Asset is not null : Source is { ArchivedAtUtc: null, DeletedAtUtc: null };
+    public string Lifecycle => IsContent ? "" : Source is null ? "Missing reference" : Source.DeletedAtUtc is not null ? "In Trash" : Source.ArchivedAtUtc is not null ? "Archived" : "";
     public bool CanComplete => SourceActive && Task is { IsRecurring: false, ValueType: TaskValueType.Checkbox } && Widget.Mode == WidgetMode.Checkbox;
     public bool CanCompleteToday => SourceActive && Task is { IsRecurring: true, ValueType: TaskValueType.Checkbox } && Occurrence is not null;
     public bool Done => (Occurrence?.Occurrence.Status ?? Task?.Status) == TaskStatus.Done;
@@ -43,6 +46,8 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     private readonly IJournalService journals;
     private readonly IPageService pages;
     private readonly IListService? lists;
+    private readonly IAssetService? assets;
+    private readonly IRichContentService? richContent;
     private HashSet<Guid> pricedCandidates = [];
     private readonly ICurrentProfile current;
     private readonly INavigationService navigation;
@@ -53,11 +58,13 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     private DateOnly loadedDate;
     public WidgetWorkspaceViewModel(IWidgetService widgets, ITaskService tasks, IRecurrenceService recurrence, ITrackerService trackers,
         ITrackerAnalyticsService analytics, IEventService events, IJournalService journals, IPageService pages,
-        ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<WidgetWorkspaceViewModel> logger, IListService? lists = null)
+        ICurrentProfile current, INavigationService navigation, TimeProvider clock, ILogger<WidgetWorkspaceViewModel> logger, IListService? lists = null,
+        IAssetService? assets = null, IRichContentService? richContent = null)
     {
         this.widgets = widgets; this.tasks = tasks; this.recurrence = recurrence; this.trackers = trackers; this.analytics = analytics;
         this.events = events; this.journals = journals; this.pages = pages; this.current = current; this.navigation = navigation; this.clock = clock; this.logger = logger;
         this.lists = lists;
+        this.assets = assets; this.richContent = richContent;
         current.Changed += (_, _) => { if (Reference?.ProfileId != current.Current?.Id) Clear(); };
     }
     public WorkspaceItemReference? Reference { get; private set; }
@@ -122,13 +129,13 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     {
         if (lists is not null && row.QuickAdd) await lists.AddAsync(new(row.ProfileId, row.Source!.Id), new(row.Input));
     });
-    public async Task<bool> EditAsync(WidgetEdit edit)
+    public async Task<bool> EditAsync(WidgetEdit edit, string? sourcePath = null)
     {
         if (!CanConfigure || Reference is not { } reference) return false;
         var request = revision; saving = true; Error = null; Notify(); var success = false;
         try
         {
-            var page = await widgets.EditAsync(reference, edit);
+            var page = sourcePath is not null && edit is AddWidget add ? await widgets.ImportAsync(reference, add, sourcePath) : await widgets.EditAsync(reference, edit);
             if (request == revision && Reference == reference) { Page = page; LayoutChanged?.Invoke(page.Canvas); success = true; }
         }
         catch (Exception e) { if (request == revision) Error = Message(e); }
@@ -138,6 +145,26 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     public void Open(WidgetContent row)
     {
         if (CanInteract && Current(row) && row.Route is { } route) navigation.Navigate(route);
+    }
+    public Task SaveRichTextAsync(WidgetContent row, string text) => ContentAction(row, async () =>
+    {
+        if (richContent is not null && row.RichText is { } rich)
+            await richContent.UpdateAsync(new(row.ProfileId, rich.Reference.Id), text);
+    });
+    public async Task UseAssetAsync(WidgetContent row, IAssetFileConsumer consumer)
+    {
+        if (!Current(row) || row.Asset is not { } asset || assets is null) throw new WorkspaceChangedException();
+        await assets.UseFileAsync(new(row.ProfileId, asset.Asset.Id), consumer);
+        if (!Current(row)) throw new WorkspaceChangedException();
+    }
+    public async Task OpenInternalLinkAsync(WidgetContent row, Guid id)
+    {
+        if (!CanInteract || !Current(row)) return;
+        var profile = row.ProfileId;
+        var graph = await pages.GetAsync(profile);
+        if (!Current(row)) return;
+        if (graph.Pages.ContainsKey(id)) navigation.Navigate(new("Pages", id.ToString("D")));
+        else row.Error = "This internal link is preserved. Navigation to non-Page items is not available here yet.";
     }
     public Task CompleteAsync(WidgetContent row) => ContentAction(row, async () =>
     {
@@ -167,6 +194,12 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     }
     private async Task<IReadOnlyList<WidgetContent>> Resolve(Guid profile, WidgetPage page, DateOnly today)
     {
+        IReadOnlyList<RichTextAttachment> documents = []; IReadOnlyList<AssetAttachment> attachments = [];
+        string? richError = null, assetError = null;
+        try { if (page.Widgets.Any(w => w.Type == WidgetType.RichText) && richContent is not null) documents = await richContent.ListAsync(new(profile, page.Canvas.PageId)); }
+        catch (WorkspaceChangedException) { throw; } catch (Exception e) { richError = Message(e); }
+        try { if (page.Widgets.Any(w => w.Type is WidgetType.Image or WidgetType.Attachment) && assets is not null) attachments = await assets.ListAsync(new(profile, page.Canvas.PageId)); }
+        catch (WorkspaceChangedException) { throw; } catch (Exception e) { assetError = Message(e); }
         var sourceMap = page.Sources.ToDictionary(s => s.Id);
         bool Active(WidgetInstance w) => w.SourceItemId is { } id && sourceMap.TryGetValue(id, out var s) && s.ArchivedAtUtc is null && s.DeletedAtUtc is null;
         var active = page.Widgets.Where(Active).ToArray(); var errors = new Dictionary<WidgetType, string>();
@@ -203,6 +236,15 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
         }
         return page.Widgets.Select(widget =>
         {
+            if (WidgetRules.IsContent(widget.Type))
+            {
+                var document = documents.SingleOrDefault(d => d.Reference.Id == widget.RichText?.ReferenceId);
+                var asset = attachments.SingleOrDefault(a => a.Reference.Id == widget.Asset?.ReferenceId);
+                var missing = widget.Type == WidgetType.RichText ? document is null : asset is null;
+                return new WidgetContent { ProfileId = profile, Widget = widget, RichText = document, Asset = asset,
+                    Title = widget.Type == WidgetType.RichText ? "Rich text" : asset?.Asset.OriginalFileName ?? widget.Type.ToString(),
+                    Error = missing ? (widget.Type == WidgetType.RichText ? richError ?? "Rich text document unavailable." : assetError ?? "Attachment reference unavailable.") : null };
+            }
             var source = widget.SourceItemId is { } id ? sourceMap.GetValueOrDefault(id) : null;
             var title = source?.Title ?? "Missing reference"; var summary = ""; NavigationRoute? route = null;
             TaskItem? task = null; OccurrenceItem? occurrence = null; TrackerPeriodSummary? period = null; TrackerAnalyticsResult? chart = null;
@@ -274,7 +316,7 @@ public sealed class WidgetWorkspaceViewModel : ObservableObject
     private string Message(Exception e)
     {
         if (e is WidgetValidationException or WidgetOperationException or CanvasValidationException or WorkspaceChangedException or TaskValidationException or TaskOperationException
-            or TrackerValidationException or TrackerOperationException or EventValidationException or EventOperationException or JournalValidationException or JournalOperationException or PageValidationException or PageOperationException or ListValidationException or ListOperationException) return e.Message;
+            or TrackerValidationException or TrackerOperationException or EventValidationException or EventOperationException or JournalValidationException or JournalOperationException or PageValidationException or PageOperationException or ListValidationException or ListOperationException or ContentValidationException or ContentOperationException) return e.Message;
         logger.LogError(e, "Widget presentation failed"); return "This Widget could not be refreshed. Please try again.";
     }
     private void Notify() { foreach (var name in new[] { nameof(Rows), nameof(Page), nameof(IsBusy), nameof(CanConfigure), nameof(CanInteract), nameof(Error) }) OnPropertyChanged(name); }
