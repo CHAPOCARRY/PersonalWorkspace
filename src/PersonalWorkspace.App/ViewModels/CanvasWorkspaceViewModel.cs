@@ -14,23 +14,30 @@ public sealed class CanvasWorkspaceViewModel : ObservableObject
     private bool loading, saving;
     private CanvasSnapshot? gestureStart;
     private CanvasEdit? previewEdit;
-    public CanvasWorkspaceViewModel(ICanvasService service, ICurrentProfile current, ILogger<CanvasWorkspaceViewModel> logger, WidgetWorkspaceViewModel? widgets = null)
+    public CanvasWorkspaceViewModel(ICanvasService service, ICurrentProfile current, ILogger<CanvasWorkspaceViewModel> logger, WidgetWorkspaceViewModel? widgets = null, DecorationWorkspaceViewModel? decorations = null)
     {
         this.service = service; this.current = current; this.logger = logger;
         Widgets = widgets;
+        Decorations = decorations;
+        if (decorations is not null) decorations.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(DecorationWorkspaceViewModel.DisplayItems)) OnPropertyChanged(nameof(DisplayItems));
+            if (args.PropertyName == nameof(DecorationWorkspaceViewModel.IsBusy)) { OnPropertyChanged(nameof(IsBusy)); OnPropertyChanged(nameof(CanEdit)); }
+        };
         if (widgets is not null)
         {
             widgets.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(WidgetWorkspaceViewModel.IsBusy)) Notify(); };
-            widgets.LayoutChanged += snapshot => { if (Reference?.ItemId == snapshot.PageId) { Snapshot = snapshot; DisplayItems = snapshot.Items; Selection.IntersectWith(snapshot.Items.Select(i => i.Id)); Notify(); } };
+            widgets.LayoutChanged += async snapshot => { if (Reference?.ItemId == snapshot.PageId) { Snapshot = snapshot; DisplayItems = snapshot.Items; Selection.IntersectWith(snapshot.Items.Select(i => i.Id)); Decorations?.SetCanvas(snapshot); if (Decorations is not null) await Decorations.RefreshAsync(); Notify(); } };
         }
         current.Changed += (_, _) => { if (Reference?.ProfileId != current.Current?.Id) Clear(); };
     }
     public WorkspaceItemReference? Reference { get; private set; }
     public WidgetWorkspaceViewModel? Widgets { get; }
+    public DecorationWorkspaceViewModel? Decorations { get; }
     public CanvasSnapshot? Snapshot { get; private set; }
     public IReadOnlyList<CanvasItem> DisplayItems { get; private set; } = [];
     public HashSet<Guid> Selection { get; } = [];
-    public bool IsBusy => loading || saving || Widgets?.IsBusy == true;
+    public bool IsBusy => loading || saving || Widgets?.IsBusy == true || Decorations?.IsBusy == true;
     public bool HasPage => Snapshot is not null;
     public bool CanEdit => !IsBusy && Snapshot is { PageActive: true, Settings.LayoutLocked: false };
     public bool CanConfigure => !IsBusy && Snapshot?.PageActive == true;
@@ -47,7 +54,7 @@ public sealed class CanvasWorkspaceViewModel : ObservableObject
         if (!force && reference == Reference && Snapshot is not null) return;
         Clear(); if (reference is null || reference.ProfileId != current.Current?.Id) return;
         var request = revision; Reference = reference; loading = true; Notify();
-        try { var snapshot = await service.GetAsync(reference); if (request == revision) { Snapshot = snapshot; DisplayItems = snapshot.Items; if (Widgets is not null) await Widgets.OpenAsync(reference); } }
+        try { var snapshot = await service.GetAsync(reference); if (request == revision) { Snapshot = snapshot; DisplayItems = snapshot.Items; if (Widgets is not null) await Widgets.OpenAsync(reference); if (request == revision && Decorations is not null) await Decorations.OpenAsync(reference); } }
         catch (Exception exception) { if (request == revision) Report(exception); }
         finally { if (request == revision) { loading = false; Notify(); } }
     }
@@ -55,6 +62,7 @@ public sealed class CanvasWorkspaceViewModel : ObservableObject
     {
         ++revision; Reference = null; Snapshot = null; DisplayItems = []; Selection.Clear(); loading = false; gestureStart = null; previewEdit = null; Guides = null; PreviewValid = true; Error = null; Notify();
         Widgets?.Clear();
+        Decorations?.Clear();
     }
     public void Select(Guid? id, bool toggle = false)
     {
@@ -120,7 +128,7 @@ public sealed class CanvasWorkspaceViewModel : ObservableObject
         try
         {
             var updated = await service.EditAsync(reference, edit);
-            if (request == revision && Reference == reference) { Snapshot = updated; DisplayItems = updated.Items; Selection.IntersectWith(updated.Items.Select(i => i.Id)); Widgets?.SetCanvas(updated); }
+            if (request == revision && Reference == reference) { Snapshot = updated; DisplayItems = updated.Items; Selection.IntersectWith(updated.Items.Select(i => i.Id)); Decorations?.SetCanvas(updated); Widgets?.SetCanvas(updated); if (Decorations is not null) await Decorations.RefreshAsync(); }
         }
         catch (Exception exception) { if (request == revision) Report(exception); }
         finally { saving = false; Notify(); }

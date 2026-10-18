@@ -28,10 +28,11 @@ public sealed partial class CanvasWorkspaceView : UserControl
     public CanvasWorkspaceView()
     {
         InitializeComponent(); Surface.Width = Surface.Height = CanvasLayout.Extent;
+        InitializeDecorations();
         // Keyboard focus must not scroll the surrounding Page during a pointer gesture.
         BringIntoViewRequested += (_, args) => { if (ReferenceEquals(args.TargetElement, this)) args.Handled = true; };
         DataContextChanged += (_, _) => Attach(); Loaded += (_, _) => Attach();
-        Unloaded += (_, _) => { Cancel(); if (model is not null) model.PropertyChanged -= Changed; model = null; };
+        Unloaded += (_, _) => { Cancel(); CancelDecorationGesture(); if (model is not null) model.PropertyChanged -= Changed; model = null; };
     }
     private void Attach() { if (model is not null) model.PropertyChanged -= Changed; model = DataContext as CanvasWorkspaceViewModel; if (model is not null) model.PropertyChanged += Changed; Render(); }
     private void Changed(object? sender, PropertyChangedEventArgs args) { if (args.PropertyName == nameof(CanvasWorkspaceViewModel.DisplayItems)) Render(); }
@@ -44,7 +45,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
         {
             if (displayedPage != model.Reference)
             {
-                CancelCapture(); displayedPage = model.Reference; resetViewport = true;
+                CancelCapture(); CancelDecorationGesture(); displayedPage = model.Reference; resetViewport = true; styledDecoration = null;
             }
             if (!model.IsPreview)
             {
@@ -77,6 +78,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
             var ids = model.DisplayItems.Select(i => i.Id).ToHashSet();
             foreach (var id in visuals.Keys.Where(id => !ids.Contains(id)).ToArray()) { Surface.Children.Remove(visuals[id]); visuals.Remove(id); }
             foreach (var decoration in decorations) Surface.Children.Remove(decoration); decorations.Clear();
+            RenderDecorations();
             if (model.Snapshot is not { } snapshot) return;
             var state = new CanvasState(snapshot with { Items = model.DisplayItems });
             foreach (var item in model.DisplayItems.OrderBy(i => i.Kind == CanvasKind.Container ? 0 : 1))
@@ -170,6 +172,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
         if (model is null) return;
         for (var focus = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject; focus is not null; focus = VisualTreeHelper.GetParent(focus))
             if (focus is TextBox or ComboBox or WidgetContentView) return;
+        if (await DecorationKey(args.Key)) { args.Handled = true; return; }
         if (args.Key == VirtualKey.Escape) { Cancel(); model.Select(null); args.Handled = true; }
         else if (args.Key == VirtualKey.Delete && model.CanEdit) { await model.DeleteAsync(); args.Handled = true; }
         else if (model.CanEdit && model.Selection.Count > 0 && args.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Up or VirtualKey.Down)
@@ -178,7 +181,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
             await model.EditAsync(new MoveCanvasItems(model.Selection.ToArray(), dx, dy)); args.Handled = true;
         }
     }
-    private async void OnLock(object sender, RoutedEventArgs args) { if (model is not null) await model.EditAsync(new LockCanvas(!model.Locked)); }
+    private async void OnLock(object sender, RoutedEventArgs args) { CancelDecorationGesture(); if (model is not null) await model.EditAsync(new LockCanvas(!model.Locked)); }
     private async void OnAddBlock(object sender, RoutedEventArgs args)
     {
         if (model is null) return; var parent = model.Selection.Count == 1 ? model.Snapshot?.Items.SingleOrDefault(i => model.Selection.Contains(i.Id) && i.Kind == CanvasKind.Container)?.Id : null;
@@ -193,7 +196,7 @@ public sealed partial class CanvasWorkspaceView : UserControl
     private void OnZoomReset(object sender, RoutedEventArgs args) => SetZoom(100 - (model?.Zoom ?? 100));
     private async void SetZoom(int delta, Point? focus = null)
     {
-        if (model?.HasPage != true || model.IsPreview || model.IsBusy) return;
+        if (model?.HasPage != true || model.IsPreview || model.IsBusy || model.Decorations?.IsPreview == true) return;
         var target = model; var reference = target.Reference;
         var old = model.Zoom / 100d; var percent = Math.Clamp(model.Zoom + delta, 25, 200); var zoom = percent / 100d;
         var point = focus ?? new Point(Viewport.ViewportWidth / 2, Viewport.ViewportHeight / 2);

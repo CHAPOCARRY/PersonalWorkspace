@@ -47,6 +47,9 @@ internal static class CompositionRoot
         services.AddSingleton<IPageRepository, SqlitePageRepository>();
         services.AddSingleton<ICanvasRepository, SqliteCanvasRepository>();
         services.AddSingleton<ICanvasService, CanvasService>();
+        services.AddSingleton<IDecorationRepository, SqliteDecorationRepository>();
+        services.AddSingleton<IDecorationService, DecorationService>();
+        services.AddSingleton<DecorationWorkspaceViewModel>();
         services.AddSingleton<IWidgetRepository, SqliteWidgetRepository>();
         services.AddSingleton<IWidgetService, WidgetService>();
         services.AddSingleton<WidgetWorkspaceViewModel>();
