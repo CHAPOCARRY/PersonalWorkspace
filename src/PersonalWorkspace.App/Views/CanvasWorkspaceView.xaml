@@ -6,10 +6,25 @@
             <Button x:Name="AddBlock" Content="+ Block" Click="OnAddBlock" AutomationProperties.AutomationId="CanvasAddBlock"/>
             <Button x:Name="AddContainer" Content="+ Container" Click="OnAddContainer" AutomationProperties.AutomationId="CanvasAddContainer"/>
             <Button x:Name="AddWidgetButton" Content="+ Widget" Click="OnAddWidget" AutomationProperties.AutomationId="CanvasAddWidget" AutomationProperties.Name="Add Widget"/>
+            <ComboBox x:Name="DecorationToolPicker" Width="150" SelectionChanged="OnDecorationTool" AutomationProperties.AutomationId="DecorationTool" AutomationProperties.Name="Canvas interaction tool"/>
             <Button Content="−" Click="OnZoomOut" IsEnabled="{Binding CanConfigure}" AutomationProperties.Name="Zoom out"/>
             <Button x:Name="ZoomLabel" Click="OnZoomReset" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="CanvasZoom" AutomationProperties.Name="Reset zoom to 100%"/>
             <Button Content="+" Click="OnZoomIn" IsEnabled="{Binding CanConfigure}" AutomationProperties.Name="Zoom in"/>
         </StackPanel>
+        <ScrollViewer x:Name="DecorationTools" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <ComboBox x:Name="DecorationPalette" Width="105" AutomationProperties.AutomationId="DecorationColor" AutomationProperties.Name="Decoration color"/>
+                <NumberBox x:Name="DecorationWidth" Width="70" Value="2" Minimum="1" Maximum="16" SmallChange="1" AutomationProperties.AutomationId="DecorationWidth" AutomationProperties.Name="Stroke width"/>
+                <CheckBox x:Name="DecorationFill" Content="Fill" AutomationProperties.AutomationId="DecorationFill"/>
+                <CheckBox x:Name="DecorationDash" Content="Dashed" AutomationProperties.AutomationId="DecorationDashed"/>
+                <Button Content="Apply style" Click="OnDecorationStyle" AutomationProperties.Name="Apply decoration style"/>
+                <Button Content="Duplicate" Click="OnDecorationDuplicate" AutomationProperties.Name="Duplicate decoration"/>
+                <Button Content="Delete" Click="OnDecorationDelete" AutomationProperties.Name="Delete decoration"/>
+                <Button Content="To front" Click="OnDecorationFront" AutomationProperties.Name="Bring decoration to front"/>
+                <Button Content="To back" Click="OnDecorationBack" AutomationProperties.Name="Send decoration to back"/>
+                <Button Content="Endpoints" Click="OnDecorationEndpoints" AutomationProperties.Name="Configure connector endpoints"/>
+            </StackPanel>
+        </ScrollViewer>
         <StackPanel x:Name="SelectionTools" Grid.Row="1" Orientation="Horizontal" Spacing="{StaticResource Space8}">
             <Button x:Name="DeleteButton" Content="Delete selected" Click="OnDelete" AutomationProperties.AutomationId="CanvasDelete"/>
             <ComboBox x:Name="Membership" Width="180" DisplayMemberPath="Label" PlaceholderText="Move block to…" AutomationProperties.AutomationId="CanvasMembership" AutomationProperties.Name="Block destination"/>
