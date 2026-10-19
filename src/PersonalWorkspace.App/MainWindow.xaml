@@ -27,6 +27,7 @@
                 <NavigationViewItem Content="Journal" Tag="Journal" Icon="Edit" />
                 <NavigationViewItem Content="Pages" Tag="Pages" Icon="Document" />
                 <NavigationViewItem Content="Lists" Tag="Lists" Icon="List" />
+                <NavigationViewItem Content="Templates" Tag="Templates" Icon="Copy" />
                 <NavigationViewItemSeparator />
                 <NavigationViewItemHeader Content="SPACES" />
             </NavigationView.MenuItems>
@@ -64,6 +65,7 @@
                 </Grid>
                 <Grid Visibility="{Binding ShowPages, Converter={StaticResource BoolVisibility}}"><views:PageWorkspaceView DataContext="{Binding Pages}" /></Grid>
                 <Grid Visibility="{Binding ShowLists, Converter={StaticResource BoolVisibility}}"><views:ListWorkspaceView DataContext="{Binding Lists}" /></Grid>
+                <Grid Visibility="{Binding ShowTemplates, Converter={StaticResource BoolVisibility}}"><views:TemplateWorkspaceView DataContext="{Binding Templates}" /></Grid>
                 <Grid Visibility="{Binding ShowJournals, Converter={StaticResource BoolVisibility}}">
                     <views:JournalWorkspaceView DataContext="{Binding Journals}" />
                 </Grid>

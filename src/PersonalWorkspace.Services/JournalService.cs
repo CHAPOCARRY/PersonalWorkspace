@@ -15,9 +15,19 @@ public sealed class JournalService(IJournalRepository repository, ICurrentProfil
         if (snapshot.Journals.Count == 0) throw new JournalValidationException("This Journal is no longer available.");
         return snapshot;
     }, token);
-    public Task<JournalDefinition> CreateAsync(Guid profileId, string title, string description = "", CancellationToken token = default) => Run(profileId, async workspace =>
+    public Task<JournalDefinition> ReadDefinitionAsync(WorkspaceItemReference reference, CancellationToken token = default) => Run(reference.ProfileId, async workspace =>
+        (await repository.ReadAsync(workspace, reference.ItemId, JournalCollection.Active, null, null, token)).Journals.SingleOrDefault()
+            ?? throw new JournalValidationException("This Journal is no longer available."), token);
+    public Task<JournalDefinition> CreateAsync(Guid profileId, string title, string description = "", CancellationToken token = default) => CreateDefinitionAsync(profileId, title, description, [], token);
+    public Task<JournalDefinition> CreateDefinitionAsync(Guid profileId, string title, string description, IReadOnlyList<JournalFieldDraft> fields, CancellationToken token = default) => Run(profileId, async workspace =>
     {
         var now = clock.GetUtcNow(); var definition = new JournalDefinition(new(Guid.NewGuid(), WorkspaceItemType.Journal, JournalRules.Name(title), now, now, null, null), Description(description), []);
+        definition = definition with { Fields = fields.Select((input, index) =>
+        {
+            var field = JournalRules.Validate(input);
+            return new JournalField(Guid.NewGuid(), definition.Item.Id, field.Name, field.Type, index, field.CurrencyCode, field.ScaleMin, field.ScaleMax,
+                Options: field.Options!.Select(o => o with { Id = Guid.NewGuid(), HasValues = false }).ToArray());
+        }).ToArray() };
         await repository.CreateAsync(workspace, definition, token); return definition;
     }, token);
     public Task<JournalDefinition> UpdateAsync(WorkspaceItemReference reference, string title, string description, CancellationToken token = default) => Change(reference, state =>

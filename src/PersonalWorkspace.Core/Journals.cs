@@ -41,6 +41,8 @@ public interface IJournalService
     Task<JournalSnapshot> GetAsync(Guid profileId, JournalCollection collection = JournalCollection.Active, DateOnly? date = null, CancellationToken token = default);
     Task<JournalSnapshot> GetRangeAsync(WorkspaceItemReference reference, DateOnly from, DateOnly through, CancellationToken token = default);
     Task<JournalDefinition> CreateAsync(Guid profileId, string title, string description = "", CancellationToken token = default);
+    Task<JournalDefinition> ReadDefinitionAsync(WorkspaceItemReference reference, CancellationToken token = default);
+    Task<JournalDefinition> CreateDefinitionAsync(Guid profileId, string title, string description, IReadOnlyList<JournalFieldDraft> fields, CancellationToken token = default);
     Task<JournalDefinition> UpdateAsync(WorkspaceItemReference reference, string title, string description, CancellationToken token = default);
     Task<JournalDefinition> SaveFieldAsync(WorkspaceItemReference reference, Guid? fieldId, JournalFieldDraft draft, CancellationToken token = default);
     Task<JournalDefinition> MoveFieldAsync(WorkspaceItemReference reference, Guid fieldId, int direction, CancellationToken token = default);
