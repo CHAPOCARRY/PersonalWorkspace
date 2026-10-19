@@ -39,6 +39,7 @@ public interface ITaskRepository
 
 public interface ITaskService
 {
+    Task<TaskDraft> CaptureDefinitionAsync(TaskReference task, CancellationToken cancellationToken = default);
     Task<TaskItem> RecordActualAsync(TaskReference task, decimal? actual, CancellationToken cancellationToken = default);
     Task<TaskGraph> GetGraphAsync(Guid profileId, CancellationToken cancellationToken = default);
     Task<TaskItem> CreateSubtaskAsync(TaskReference parent, string title, CancellationToken cancellationToken = default);

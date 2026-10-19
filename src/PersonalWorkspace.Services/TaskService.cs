@@ -224,6 +224,18 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
             return graph.Tasks[task.Item.Id];
         }, cancellationToken);
 
+    public Task<TaskDraft> CaptureDefinitionAsync(TaskReference reference, CancellationToken cancellationToken = default) =>
+        RunAsync(reference.ProfileId, async workspace =>
+        {
+            var graph = await repository.GetGraphAsync(workspace, cancellationToken);
+            var task = graph.Tasks.GetValueOrDefault(reference.ItemId) ?? throw new TaskValidationException("This Task is no longer available.");
+            RequireEditable(task);
+            if (task.IsRecurring || task.HasOccurrences || task.ParentTaskId is not null || graph.Tasks.Values.Any(t => t.ParentTaskId == reference.ItemId)
+                || graph.Dependencies.Any(d => d.TaskId == reference.ItemId || d.DependsOnTaskId == reference.ItemId))
+                throw new TaskValidationException("Templates support only single Tasks without recurrence history, subtasks, parents or dependencies. This Task cannot be captured without losing its behavior.");
+            return Validate(new(task.Item.Title, task.Description, Priority: task.Priority, Value: task.Value is { } value ? value with { Actual = null } : null));
+        }, cancellationToken);
+
     private TaskItem NewTask(TaskDraft draft)
     {
         var now = time.GetUtcNow();

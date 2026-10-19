@@ -17,11 +17,19 @@ public sealed class ListService(IListRepository repository, ITaskService tasks, 
         if (!Enum.IsDefined(query.Filter) || query.Offset < 0 || query.Limit is < 1 or > 1000) throw new ListValidationException("Request 1–1,000 items with a valid filter and nonnegative offset.");
         return repository.GetItemsAsync(w, list.ItemId, query, token);
     }, token);
-    public Task<ListDefinition> CreateAsync(Guid profile, ListDraft draft, CancellationToken token = default) => Change(profile, null, state =>
+    public Task<ListDefinition> CreateAsync(Guid profile, ListDraft draft, CancellationToken token = default) => CreateDefinitionAsync(profile, draft, [], token);
+    public Task<ListDefinition> CreateDefinitionAsync(Guid profile, ListDraft draft, IReadOnlyList<ListItemDraft> items, CancellationToken token = default) => Change(profile, null, state =>
     {
         var valid = ListRules.Validate(draft); var now = clock.GetUtcNow();
         var list = new ListDefinition(new(Guid.NewGuid(), WorkspaceItemType.List, valid.Title, now, now, null, null), valid.Description, valid.ShowQuantity, valid.ShowPrices, valid.CurrencyCode);
-        state.Lists.Add(list.Item.Id, list); return list;
+        state.Lists.Add(list.Item.Id, list);
+        foreach (var input in items)
+        {
+            var value = ListRules.Validate(input);
+            var item = new ListItem(Guid.NewGuid(), list.Item.Id, value.Title, false, value.Quantity, value.UnitPrice, value.Note, value.Link, state.Items.Count, now, now);
+            state.Items.Add(item.Id, item);
+        }
+        CheckTotals(state, list.Item.Id); return list;
     }, token);
     public Task<ListDefinition> UpdateAsync(WorkspaceItemReference list, ListDraft draft, CancellationToken token = default) => Change(list.ProfileId, list.ItemId, state =>
     {

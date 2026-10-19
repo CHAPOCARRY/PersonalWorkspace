@@ -1,0 +1,60 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.TemplateWorkspaceView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space12}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock Text="Templates" Style="{StaticResource PageTitleStyle}"/>
+        <StackPanel Grid.Row="1" Spacing="{StaticResource Space4}">
+            <TextBlock Text="Save a definition once, then create independent Tasks, Lists or Journals." Style="{StaticResource BodyStyle}"/>
+            <TextBlock Text="{Binding Error}" Foreground="{ThemeResource Danger}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+            <TextBlock Text="{Binding Notice}" Style="{StaticResource BodyStyle}" AutomationProperties.LiveSetting="Polite"/>
+        </StackPanel>
+        <Grid Grid.Row="2" ColumnSpacing="{StaticResource Space24}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid RowSpacing="{StaticResource Space12}">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <ComboBox Header="Template type" ItemsSource="{Binding Filters}" SelectedItem="{Binding Filter, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" HorizontalAlignment="Stretch" AutomationProperties.AutomationId="TemplateFilter"/>
+                <ListView Grid.Row="1" ItemsSource="{Binding Rows}" SelectionMode="None" IsItemClickEnabled="False" AutomationProperties.Name="Saved templates">
+                    <ListView.ItemTemplate><DataTemplate>
+                        <Button Style="{StaticResource TaskTitleButtonStyle}" Click="OnSelect" Tag="{Binding}" AutomationProperties.Name="{Binding Name}">
+                            <StackPanel Spacing="{StaticResource Space4}"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock Text="{Binding Detail}" Style="{StaticResource BodyStyle}" FontSize="{StaticResource Small}"/></StackPanel>
+                        </Button>
+                    </DataTemplate></ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" IsEnabled="{Binding IsIdle}">
+                <StackPanel Spacing="{StaticResource Space16}">
+                    <Border Background="{ThemeResource Surface}" BorderBrush="{ThemeResource Border}" BorderThickness="1" CornerRadius="{StaticResource CardRadius}" Padding="{StaticResource CardPadding}">
+                        <StackPanel Spacing="{StaticResource Space12}">
+                            <TextBlock Text="Saved definition" FontSize="{StaticResource SectionTitle}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="TemplatePreview"/>
+                            <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding HasSelection, Converter={StaticResource BoolVisibility}}">
+                                <TextBox Header="New entity title" Text="{Binding NewTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TemplateNewTitle"/>
+                                <Button Content="Create from Template" Command="{Binding InstantiateCommand}" IsEnabled="{Binding CanUse}"/>
+                                <Expander Header="Template details" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <StackPanel Spacing="{StaticResource Space12}">
+                                        <TextBox Header="Template name" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TemplateName"/>
+                                        <TextBox Header="Template description" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" AutomationProperties.AutomationId="TemplateDescription"/>
+                                        <Button Content="Save template details" Command="{Binding SaveMetadataCommand}"/>
+                                        <Button Content="Delete template" Click="OnDelete" Foreground="{ThemeResource Danger}"/>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Expander Header="Save or update from an existing entity" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="{StaticResource Space12}">
+                            <ComboBox Header="Source type" ItemsSource="{Binding Types}" SelectedItem="{Binding SourceType, Mode=TwoWay}" AutomationProperties.AutomationId="TemplateSourceType"/>
+                            <ComboBox Header="Source" ItemsSource="{Binding Sources}" SelectedItem="{Binding Source, Mode=TwoWay}" HorizontalAlignment="Stretch" AutomationProperties.AutomationId="TemplateSource"/>
+                            <TextBox Header="New template name" Text="{Binding CaptureName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TemplateCaptureName"/>
+                            <TextBox Header="New template description (optional)" Text="{Binding CaptureDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" AutomationProperties.AutomationId="TemplateCaptureDescription"/>
+                            <Button Content="Save as Template" Command="{Binding CaptureCommand}" IsEnabled="{Binding CanCapture}"/>
+                            <Button Content="Update selected Template from source" Click="OnReplace" IsEnabled="{Binding CanReplace}"/>
+                            <TextBlock Text="Only the supported definition is saved. Sources and existing instances remain independent. Task recurrence, subtasks and dependencies are not supported." Style="{StaticResource BodyStyle}"/>
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

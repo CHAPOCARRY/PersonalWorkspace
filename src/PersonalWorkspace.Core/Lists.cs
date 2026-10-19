@@ -57,6 +57,7 @@ public interface IListService
     Task<ListSnapshot> ReadAsync(WorkspaceItemReference list, CancellationToken token = default);
     Task<IReadOnlyList<ListItem>> GetItemsAsync(WorkspaceItemReference list, ListItemQuery query, CancellationToken token = default);
     Task<ListDefinition> CreateAsync(Guid profile, ListDraft draft, CancellationToken token = default);
+    Task<ListDefinition> CreateDefinitionAsync(Guid profile, ListDraft draft, IReadOnlyList<ListItemDraft> items, CancellationToken token = default);
     Task<ListDefinition> UpdateAsync(WorkspaceItemReference list, ListDraft draft, CancellationToken token = default);
     Task<ListItem> AddAsync(WorkspaceItemReference list, ListItemDraft draft, CancellationToken token = default);
     Task<ListItem> UpdateItemAsync(ListItemReference item, ListItemDraft draft, CancellationToken token = default);
