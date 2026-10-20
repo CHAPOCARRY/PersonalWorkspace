@@ -27,7 +27,7 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
     }
     private static Guid GuidAt(SqliteDataReader r, int i) => Guid.Parse(r.GetString(i));
     private static DateTimeOffset Utc(SqliteDataReader r, int i) => DateTimeOffset.Parse(r.GetString(i), CultureInfo.InvariantCulture);
-    private static Asset AssetRow(SqliteDataReader r) => new(GuidAt(r, 0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetInt64(4), r.GetString(5), Utc(r, 6), r.IsDBNull(7) ? null : r.GetInt32(7), r.IsDBNull(8) ? null : r.GetInt32(8), r.GetBoolean(9));
+    internal static Asset AssetRow(SqliteDataReader r) => new(GuidAt(r, 0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetInt64(4), r.GetString(5), Utc(r, 6), r.IsDBNull(7) ? null : r.GetInt32(7), r.IsDBNull(8) ? null : r.GetInt32(8), r.GetBoolean(9));
     private static RichTextDocument DocumentRow(SqliteDataReader r) => new(GuidAt(r, 0), r.GetString(1), r.GetString(2), r.GetInt32(3), Utc(r, 4), Utc(r, 5));
     private static async Task<Asset?> AssetById(SqliteConnection c, SqliteTransaction tx, Guid id, CancellationToken token)
     {
@@ -63,7 +63,12 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
     }, token);
     public Task FinishCleanupAsync(WorkspaceContext w, Guid id, bool import, CancellationToken token) => Run(w, true, async (c, tx) =>
     {
-        await Execute(c, tx, import ? "DELETE FROM AssetImports WHERE AssetId=$id AND NOT EXISTS(SELECT 1 FROM Assets WHERE Id=$id)" : "DELETE FROM Assets WHERE Id=$id AND PendingDelete=1 AND NOT EXISTS(SELECT 1 FROM AssetReferences WHERE AssetId=$id)", token, ("id", id)); return true;
+        await Execute(c, tx, import ? "DELETE FROM AssetImports WHERE AssetId=$id AND NOT EXISTS(SELECT 1 FROM Assets WHERE Id=$id)" : "DELETE FROM Assets WHERE Id=$id AND PendingDelete=1 AND NOT EXISTS(SELECT 1 FROM AssetReferences WHERE AssetId=$id) AND NOT EXISTS(SELECT 1 FROM TemplateAssetReferences WHERE AssetId=$id)", token, ("id", id)); return true;
+    }, token);
+    public Task<bool> CanCleanupAsync(WorkspaceContext w, Guid id, CancellationToken token) => Run(w, false, async (c, tx) =>
+    {
+        using var cmd = Command(c, tx, "SELECT EXISTS(SELECT 1 FROM Assets WHERE Id=$id AND PendingDelete=1 AND NOT EXISTS(SELECT 1 FROM AssetReferences WHERE AssetId=$id) AND NOT EXISTS(SELECT 1 FROM TemplateAssetReferences WHERE AssetId=$id))", ("id", id));
+        return (long)(await cmd.ExecuteScalarAsync(token))! == 1;
     }, token);
     internal static async Task<AssetReference> AssetLink(SqliteConnection c, SqliteTransaction tx, Guid owner, Guid asset, DateTimeOffset now, CancellationToken token)
     {
@@ -108,8 +113,37 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
     internal static async Task<RichTextAttachment> CreateDocument(SqliteConnection c, SqliteTransaction tx, Guid owner, RichTextDocument document, CancellationToken token)
     {
         await Owner(c, tx, owner, true, token);
+        return await InsertDocument(c, tx, owner, document, token);
+    }
+    private static async Task<RichTextAttachment> InsertDocument(SqliteConnection c, SqliteTransaction tx, Guid owner, RichTextDocument document, CancellationToken token)
+    {
         await Execute(c, tx, "INSERT INTO RichTextDocuments VALUES($id,$content,$format,$version,$created,$updated)", token, ("id", document.Id), ("content", document.Content), ("format", document.Format), ("version", document.FormatVersion), ("created", document.CreatedAtUtc), ("updated", document.UpdatedAtUtc));
-        return new RichTextAttachment(await DocumentLink(c, tx, owner, document.Id, document.CreatedAtUtc, token), document);
+        var reference = new RichTextReference(Guid.NewGuid(), document.Id, owner, document.CreatedAtUtc);
+        await Execute(c, tx, "INSERT INTO RichTextReferences VALUES($id,$document,$owner,$utc)", token, ("id", reference.Id), ("document", document.Id), ("owner", owner), ("utc", document.CreatedAtUtc));
+        return new(reference, document);
+    }
+    internal static async Task<IReadOnlyList<WidgetInstance>> CreatePageWidgetContent(SqliteConnection c, SqliteTransaction tx, Guid page,
+        IReadOnlyList<PageTemplateWidget> entries, IReadOnlyList<Asset> assets, CancellationToken token)
+    {
+        await Owner(c, tx, page, true, token); var available = assets.ToDictionary(a => a.Id); var result = new List<WidgetInstance>(); var order = 0;
+        foreach (var entry in entries)
+        {
+            var widget = entry.Widget;
+            if (entry.Text is { } text)
+            {
+                var document = new RichTextDocument(Guid.NewGuid(), text.Content, text.Format, text.FormatVersion, widget.CreatedAtUtc, widget.CreatedAtUtc);
+                var created = await InsertDocument(c, tx, page, document, token); widget = widget with { RichText = new(created.Reference.Id) };
+            }
+            if (entry.File is { } file)
+            {
+                if (!available.TryGetValue(file.AssetId, out var asset) || asset.PendingDelete) throw new ContentValidationException("The template Asset is unavailable or pending cleanup.");
+                var reference = Guid.NewGuid();
+                await Execute(c, tx, "INSERT INTO AssetReferences VALUES($id,$asset,$owner,0,$sort,$utc)", token, ("id", reference), ("asset", asset.Id), ("owner", page), ("sort", order++), ("utc", widget.CreatedAtUtc));
+                widget = widget with { Asset = new(reference, file.Fit, file.AltText) };
+            }
+            result.Add(widget);
+        }
+        return result;
     }
     Task<RichTextDocument?> IRichContentRepository.FindAsync(WorkspaceContext w, Guid document, CancellationToken token) => Run(w, false, (c, tx) => DocumentById(c, tx, document, token), token);
     Task<RichTextReference> IRichContentRepository.LinkAsync(WorkspaceContext w, Guid owner, Guid document, DateTimeOffset now, CancellationToken token) => Run(w, true, (c, tx) => DocumentLink(c, tx, owner, document, now, token), token);

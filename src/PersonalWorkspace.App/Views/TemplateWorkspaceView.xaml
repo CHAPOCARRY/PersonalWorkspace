@@ -5,7 +5,7 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <TextBlock Text="Templates" Style="{StaticResource PageTitleStyle}"/>
         <StackPanel Grid.Row="1" Spacing="{StaticResource Space4}">
-            <TextBlock Text="Save a definition once, then create independent Tasks, Lists or Journals." Style="{StaticResource BodyStyle}"/>
+            <TextBlock Text="Save a template, then create Tasks, Lists, Journals or Pages." Style="{StaticResource BodyStyle}"/>
             <TextBlock Text="{Binding Error}" Foreground="{ThemeResource Danger}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
             <TextBlock Text="{Binding Notice}" Style="{StaticResource BodyStyle}" AutomationProperties.LiveSetting="Polite"/>
         </StackPanel>
@@ -30,6 +30,7 @@
                             <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="TemplatePreview"/>
                             <StackPanel Spacing="{StaticResource Space12}" Visibility="{Binding HasSelection, Converter={StaticResource BoolVisibility}}">
                                 <TextBox Header="New entity title" Text="{Binding NewTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TemplateNewTitle"/>
+                                <ComboBox Header="Destination parent Page" ItemsSource="{Binding Destinations}" SelectedItem="{Binding Destination, Mode=TwoWay}" Visibility="{Binding IsPageTemplate, Converter={StaticResource BoolVisibility}}" HorizontalAlignment="Stretch" AutomationProperties.AutomationId="TemplatePageParent"/>
                                 <Button Content="Create from Template" Command="{Binding InstantiateCommand}" IsEnabled="{Binding CanUse}"/>
                                 <Expander Header="Template details" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                     <StackPanel Spacing="{StaticResource Space12}">
@@ -50,7 +51,7 @@
                             <TextBox Header="New template description (optional)" Text="{Binding CaptureDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" AutomationProperties.AutomationId="TemplateCaptureDescription"/>
                             <Button Content="Save as Template" Command="{Binding CaptureCommand}" IsEnabled="{Binding CanCapture}"/>
                             <Button Content="Update selected Template from source" Click="OnReplace" IsEnabled="{Binding CanReplace}"/>
-                            <TextBlock Text="Only the supported definition is saved. Sources and existing instances remain independent. Task recurrence, subtasks and dependencies are not supported." Style="{StaticResource BodyStyle}"/>
+                            <TextBlock Text="Pages include their layout and content, without child Pages. Widget sources and attachment files remain shared; rich text is independent. Task templates exclude recurrence, subtasks and dependencies." Style="{StaticResource BodyStyle}"/>
                         </StackPanel>
                     </Expander>
                 </StackPanel>

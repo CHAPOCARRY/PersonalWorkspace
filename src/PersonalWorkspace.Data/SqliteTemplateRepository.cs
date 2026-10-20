@@ -4,7 +4,7 @@ using PersonalWorkspace.Core;
 
 namespace PersonalWorkspace.Data;
 
-public sealed class SqliteTemplateRepository : ITemplateRepository
+public sealed partial class SqliteTemplateRepository : ITemplateRepository, IPageTemplateRepository
 {
     private static Task<SqliteConnection> Open(WorkspaceContext w, CancellationToken token) => SqliteConnectionFactory.OpenDatabaseAsync(w.DatabasePath, false, token);
     private static SqliteCommand Command(SqliteConnection c, SqliteTransaction? tx, string sql, params object?[] values)
@@ -31,7 +31,7 @@ public sealed class SqliteTemplateRepository : ITemplateRepository
     }
     public async Task<IReadOnlyList<TemplateSource>> SourcesAsync(WorkspaceContext workspace, TemplateType type, CancellationToken token)
     {
-        var itemType = type switch { TemplateType.Task => WorkspaceItemType.Task, TemplateType.List => WorkspaceItemType.List, TemplateType.Journal => WorkspaceItemType.Journal, _ => throw new TemplateValidationException("Choose a supported template type.") };
+        var itemType = type switch { TemplateType.Task => WorkspaceItemType.Task, TemplateType.List => WorkspaceItemType.List, TemplateType.Journal => WorkspaceItemType.Journal, TemplateType.Page => WorkspaceItemType.Page, _ => throw new TemplateValidationException("Choose a supported template type.") };
         await using var c = await Open(workspace, token);
         using var cmd = Command(c, null, "SELECT Id,Title FROM WorkspaceItems WHERE ItemType=$p0 AND ArchivedAtUtc IS NULL AND DeletedAtUtc IS NULL ORDER BY Title COLLATE WORKSPACE_NAME,Id", itemType);
         var rows = new List<TemplateSource>(); using var r = await cmd.ExecuteReaderAsync(token);
@@ -40,6 +40,10 @@ public sealed class SqliteTemplateRepository : ITemplateRepository
     public async Task<TemplateSnapshot> ReadAsync(WorkspaceContext workspace, Guid id, CancellationToken token)
     {
         await using var c = await Open(workspace, token); using var tx = c.BeginTransaction(deferred: true);
+        var result = await Read(c, tx, id, token); await tx.CommitAsync(token); return result;
+    }
+    private static async Task<TemplateSnapshot> Read(SqliteConnection c, SqliteTransaction tx, Guid id, CancellationToken token)
+    {
         TemplateMetadata metadata;
         using (var cmd = Command(c, tx, "SELECT Id,TemplateType,Name,Description,FormatVersion,CreatedAtUtc,UpdatedAtUtc FROM Templates WHERE Id=$p0", id))
         using (var r = await cmd.ExecuteReaderAsync(token))
@@ -76,8 +80,9 @@ public sealed class SqliteTemplateRepository : ITemplateRepository
             { var field = Guid.Parse(r.GetString(1)); if (!options.TryGetValue(field, out var list)) options[field] = list = []; list.Add(new(Guid.Parse(r.GetString(0)), r.GetString(2), r.GetInt32(3))); }
             blueprint = new JournalBlueprint(title, description, fields.Select(f => f.Draft with { Options = options.GetValueOrDefault(f.Id)?.ToArray() ?? [] }).ToArray());
         }
+        else if (metadata.Type == TemplateType.Page) blueprint = await ReadPage(c, tx, id, token);
         else throw new TemplateValidationException("This template type is not supported.");
-        await tx.CommitAsync(token); return new(metadata, blueprint);
+        return new(metadata, blueprint);
     }
     private static async Task Required(SqliteDataReader r, CancellationToken token)
     { if (!await r.ReadAsync(token)) throw new TemplateValidationException("This template definition is incomplete."); }

@@ -45,6 +45,8 @@ internal static class CompositionRoot
         services.AddSingleton<IListService, ListService>();
         services.AddSingleton<ListWorkspaceViewModel>();
         services.AddSingleton<ITemplateRepository, SqliteTemplateRepository>();
+        services.AddSingleton<IPageTemplateRepository, SqliteTemplateRepository>();
+        services.AddSingleton<IPageTemplateService, PageTemplateService>();
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<TemplateWorkspaceViewModel>();
         services.AddSingleton<IPageRepository, SqlitePageRepository>();

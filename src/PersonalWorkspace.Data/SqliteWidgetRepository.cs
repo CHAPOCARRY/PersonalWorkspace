@@ -12,7 +12,7 @@ public sealed partial class SqliteWidgetRepository : IWidgetRepository
         using var transaction = connection.BeginTransaction(deferred: true);
         var result = await Read(connection, transaction, pageId, null, token); await transaction.CommitAsync(token); return result;
     }
-    private static async Task<WidgetPage> Read(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, Guid? extraSource, CancellationToken token)
+    internal static async Task<WidgetPage> Read(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, Guid? extraSource, CancellationToken token)
     {
         var canvas = await SqliteCanvasRepository.Read(connection, transaction, pageId, token);
         var widgets = new List<WidgetInstance>();
@@ -59,7 +59,7 @@ public sealed partial class SqliteWidgetRepository : IWidgetRepository
         await Write(connection, transaction, pageId, before, after, token);
         await transaction.CommitAsync(token); return after;
     }
-    private static async Task Write(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, WidgetPage before, WidgetPage after, CancellationToken token)
+    internal static async Task Write(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, WidgetPage before, WidgetPage after, CancellationToken token)
     {
         foreach (var removed in before.Widgets.Where(w => !after.Widgets.Any(a => a.Id == w.Id)))
         { using var command = Command(connection, transaction, "DELETE FROM WidgetInstances WHERE Id=$id;", pageId); Add(command, "$id", removed.Id); await command.ExecuteNonQueryAsync(token); }

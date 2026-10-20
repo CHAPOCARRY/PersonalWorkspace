@@ -75,6 +75,7 @@ public interface IAssetRepository
     Task<IReadOnlyList<Asset>> AssetsAsync(WorkspaceContext w, bool pendingOnly, CancellationToken token);
     Task<IReadOnlyList<AssetImportJob>> ImportsAsync(WorkspaceContext w, CancellationToken token);
     Task FinishCleanupAsync(WorkspaceContext w, Guid id, bool import, CancellationToken token);
+    Task<bool> CanCleanupAsync(WorkspaceContext w, Guid id, CancellationToken token) => Task.FromResult(false);
     Task<IReadOnlyList<AssetAttachment>> ListAsync(WorkspaceContext w, Guid owner, CancellationToken token);
     Task<AssetReference> LinkAsync(WorkspaceContext w, Guid owner, Guid asset, DateTimeOffset now, CancellationToken token);
     Task RemoveAsync(WorkspaceContext w, Guid reference, CancellationToken token);

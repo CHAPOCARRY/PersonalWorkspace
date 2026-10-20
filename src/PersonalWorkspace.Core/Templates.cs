@@ -1,6 +1,6 @@
 namespace PersonalWorkspace.Core;
 
-public enum TemplateType { Task = 1, List = 2, Journal = 3 }
+public enum TemplateType { Task = 1, List = 2, Journal = 3, Page = 4 }
 public sealed record TemplateReference(Guid ProfileId, Guid Id);
 public sealed record TemplateMetadata(Guid Id, TemplateType Type, string Name, string? Description, int FormatVersion,
     DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);
@@ -32,6 +32,7 @@ public interface ITemplateService
     Task RenameAsync(TemplateReference template, string name, string? description, CancellationToken token = default);
     Task DeleteAsync(TemplateReference template, CancellationToken token = default);
     Task<WorkspaceItem> InstantiateAsync(TemplateReference template, string? title = null, CancellationToken token = default);
+    Task<WorkspaceItem> InstantiatePageAsync(TemplateReference template, string? title = null, Guid? parent = null, CancellationToken token = default) => throw new NotSupportedException();
 }
 public sealed class TemplateValidationException(string message) : Exception(message);
 public sealed class TemplateOperationException(string message, Exception inner) : Exception(message, inner);

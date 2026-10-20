@@ -39,7 +39,7 @@ public sealed partial class TrackerTests
         var files=new Dictionary<string,byte[]>();foreach(var source in StoredFiles()){var relative=Path.GetRelativePath(paths.ProfileAttachments(profile),source);var target=Path.Combine(paths.ProfileAttachments(legacy),relative);Directory.CreateDirectory(Path.GetDirectoryName(target)!);File.Copy(source,target);files[target]=await File.ReadAllBytesAsync(source);}
         await initializer.InitializeAsync(legacy,false);await initializer.InitializeAsync(legacy,false);
         foreach(var table in tables)Assert.Equal(snapshots[table],await TableRows(legacy,table));foreach(var (file,bytes) in files)Assert.Equal(bytes,await File.ReadAllBytesAsync(file));
-        Assert.Equal(18L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(16L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));Assert.Equal(0L,await Sql("SELECT COUNT(*) FROM CanvasDecorations;",legacy));Assert.Null(await Sql("PRAGMA foreign_key_check;",legacy));
+        Assert.Equal(19L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(16L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));Assert.Equal(0L,await Sql("SELECT COUNT(*) FROM CanvasDecorations;",legacy));Assert.Null(await Sql("PRAGMA foreign_key_check;",legacy));
     }
 
     [Theory]

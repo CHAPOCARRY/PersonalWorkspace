@@ -12,7 +12,8 @@ namespace PersonalWorkspace.Tests;
 
 public sealed partial class TrackerTests
 {
-    private TemplateService Templates(ITemplateRepository? repository = null) => new(repository ?? new SqliteTemplateRepository(), JournalTasks(), Lists(), Journals(), current, gate, clock, NullLogger<TemplateService>.Instance);
+    private TemplateService Templates(ITemplateRepository? repository = null) => new(repository ?? new SqliteTemplateRepository(), JournalTasks(), Lists(), Journals(), current, gate, clock, NullLogger<TemplateService>.Instance,
+        new PageTemplateService(new SqliteTemplateRepository(), AssetFiles(), clock), Assets());
     private TemplateReference TRef(TemplateSnapshot snapshot) => new(profile, snapshot.Metadata.Id);
     private Task<TemplateSnapshot> Capture(WorkspaceItem item, TemplateType type, string name = "Reusable") => Templates().CaptureAsync(new(profile, item.Id), type, name);
 
@@ -38,7 +39,7 @@ public sealed partial class TrackerTests
         var before=new Dictionary<string,string>();foreach(var table in tables)before[table]=await TableRows(legacy,table);
         await initializer.InitializeAsync(legacy,false);await initializer.InitializeAsync(legacy,false);
         foreach(var table in tables)Assert.Equal(before[table],await TableRows(legacy,table));
-        Assert.Equal(18L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(17L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
+        Assert.Equal(19L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(17L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
         Assert.Equal(0L,await Sql("SELECT COUNT(*) FROM Templates;",legacy));Assert.Null(await Sql("PRAGMA foreign_key_check;",legacy));Assert.Equal("ok",await Sql("PRAGMA integrity_check;",legacy));
         await using var global=await new SqliteConnectionFactory(paths).OpenAsync();using var check=global.CreateCommand();check.CommandText="SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%Template%'";Assert.Equal(0L,await check.ExecuteScalarAsync());
     }

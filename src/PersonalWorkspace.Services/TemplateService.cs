@@ -4,7 +4,8 @@ using PersonalWorkspace.Core;
 namespace PersonalWorkspace.Services;
 
 public sealed class TemplateService(ITemplateRepository repository, ITaskService tasks, IListService lists, IJournalService journals,
-    ICurrentProfile current, IWorkspaceOperationGate gate, TimeProvider clock, ILogger<TemplateService> logger) : ITemplateService
+    ICurrentProfile current, IWorkspaceOperationGate gate, TimeProvider clock, ILogger<TemplateService> logger,
+    IPageTemplateService? pages = null, IWorkspaceMaintenance? maintenance = null) : ITemplateService
 {
     public Task<IReadOnlyList<TemplateMetadata>> CatalogAsync(Guid profile, TemplateType? type = null, CancellationToken token = default) => Run(profile, w =>
     { if (type is { } value) Type(value); return repository.CatalogAsync(w, type, token); }, token);
@@ -14,6 +15,11 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
     public async Task<TemplateSnapshot> CaptureAsync(WorkspaceItemReference source, TemplateType type, string name, string? description = null, CancellationToken token = default)
     {
         Type(type); name = Name(name); description = Description(description);
+        if (type == TemplateType.Page) return await Run(source.ProfileId, w =>
+        {
+            var now = clock.GetUtcNow();
+            return PageTemplates.CaptureAsync(w, source.ItemId, new(Guid.NewGuid(), type, name, description, 1, now, now), true, token);
+        }, token);
         var blueprint = await Capture(source, type, token);
         return await Run(source.ProfileId, async w =>
         {
@@ -24,7 +30,14 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
     public async Task<TemplateSnapshot> ReplaceAsync(TemplateReference template, WorkspaceItemReference source, CancellationToken token = default)
     {
         if (source.ProfileId != template.ProfileId) throw new WorkspaceChangedException();
-        var old = await ReadAsync(template, token); var blueprint = await Capture(source, old.Metadata.Type, token);
+        var old = await ReadAsync(template, token);
+        if (old.Metadata.Type == TemplateType.Page) return await Run(template.ProfileId, async w =>
+        {
+            var latest = await repository.ReadAsync(w, template.Id, token);
+            var result = await PageTemplates.CaptureAsync(w, source.ItemId, latest.Metadata with { UpdatedAtUtc = Next(latest.Metadata.UpdatedAtUtc) }, false, token);
+            await Cleanup(w); return result;
+        }, token);
+        var blueprint = await Capture(source, old.Metadata.Type, token);
         return await Run(template.ProfileId, async w =>
         {
             // Recheck after the source read; concurrent metadata edits must not be overwritten.
@@ -39,10 +52,20 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
         if (old.Name != name || old.Description != description) await repository.RenameAsync(w, template.Id, name, description, Next(old.UpdatedAtUtc), token);
         return true;
     }, token);
-    public Task DeleteAsync(TemplateReference template, CancellationToken token = default) => Run(template.ProfileId, async w => { await repository.DeleteAsync(w, template.Id, token); return true; }, token);
+    public Task DeleteAsync(TemplateReference template, CancellationToken token = default) => Run(template.ProfileId, async w => { await repository.DeleteAsync(w, template.Id, token); await Cleanup(w); return true; }, token);
+    private IPageTemplateService PageTemplates => pages ?? throw new TemplateValidationException("Page templates are unavailable.");
+    public Task<WorkspaceItem> InstantiatePageAsync(TemplateReference template, string? title = null, Guid? parent = null, CancellationToken token = default) =>
+        Run(template.ProfileId, w => PageTemplates.InstantiateAsync(w, template.Id, title, parent, token), token);
+    private async Task Cleanup(WorkspaceContext w)
+    {
+        if (maintenance is null) return;
+        try { await maintenance.RecoverAsync(w.ProfileId, CancellationToken.None); }
+        catch (Exception e) { logger.LogWarning(e, "Template saved; content cleanup remains queued in Profile {ProfileId}", w.ProfileId); }
+    }
     public async Task<WorkspaceItem> InstantiateAsync(TemplateReference template, string? title = null, CancellationToken token = default)
     {
         var snapshot = await ReadAsync(template, token);
+        if (snapshot.Metadata.Type == TemplateType.Page) return await InstantiatePageAsync(template, title, null, token);
         title = string.IsNullOrWhiteSpace(title) ? snapshot.Blueprint.Title : title.Trim();
         // Release the read lease before entering a canonical service. Each service rechecks the originating Profile
         // and atomically writes the complete new entity. The captured blueprint never depends on its source.
@@ -73,7 +96,7 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
             default: throw new TemplateValidationException("Choose a supported template type.");
         }
     }
-    private static void Type(TemplateType type) { if (!Enum.IsDefined(type)) throw new TemplateValidationException("Choose Task, List or Journal."); }
+    private static void Type(TemplateType type) { if (!Enum.IsDefined(type)) throw new TemplateValidationException("Choose Task, List, Journal or Page."); }
     private static string Name(string name) => name.Trim() is { Length: > 0 and <= 200 } value && !value.Any(char.IsControl) ? value : throw new TemplateValidationException("Enter a template name of 1–200 characters without line breaks.");
     private static string? Description(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim().Length <= 50000 ? text.Trim() : throw new TemplateValidationException("Keep the template description within 50,000 characters.");
     private DateTimeOffset Next(DateTimeOffset previous) => clock.GetUtcNow() > previous ? clock.GetUtcNow() : previous.AddTicks(1);
@@ -83,6 +106,7 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } path) throw new WorkspaceChangedException();
         try { return await action(new(profile, path)); }
         catch (TemplateValidationException) { throw; }
+        catch (Exception e) when (e is PageValidationException or CanvasValidationException or WidgetValidationException or DecorationValidationException or ContentValidationException) { throw new TemplateValidationException(e.Message); }
         catch (OperationCanceledException) { throw; }
         catch (Exception e) { logger.LogError(e, "Template operation failed in Profile {ProfileId}", profile); throw new TemplateOperationException("The template could not be loaded or saved. Check access to the workspace and try again.", e); }
     }
