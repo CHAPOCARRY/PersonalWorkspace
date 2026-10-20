@@ -14,7 +14,7 @@ public sealed partial class TemplateWorkspaceView : UserControl
     {
         if (Model is not { CanUse: true } model || model.CurrentReference() is not { } reference) return;
         var name = model.Snapshot!.Metadata.Name;
-        if (await TrackerMenus.Confirm(XamlRoot, "Delete template permanently?", $"Delete “{name}”? Existing Tasks, Lists and Journals will remain. This cannot be undone.", "Delete template")) await model.DeleteAsync(reference);
+        if (await TrackerMenus.Confirm(XamlRoot, "Delete template permanently?", $"Delete “{name}”? Existing Tasks, Lists, Journals and Pages will remain. This cannot be undone.", "Delete template")) await model.DeleteAsync(reference);
     }
     private async void OnReplace(object sender, RoutedEventArgs args)
     {

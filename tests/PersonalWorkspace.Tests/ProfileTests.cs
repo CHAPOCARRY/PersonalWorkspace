@@ -97,6 +97,11 @@ public sealed class ProfileTests : IAsyncLifetime
             Assert.True(await reader.ReadAsync());
             Assert.Equal(table, reader.GetString(0));
         }
+        foreach (var table in new[] { "PageTemplateDefinitions", "PageTemplateCanvasItems", "PageTemplateWidgets", "PageTemplateChartSettings", "PageTemplateListSettings", "PageTemplateRichTextContent", "TemplateAssetReferences", "PageTemplateAssetSettings", "PageTemplateDecorations", "PageTemplateShapeSettings", "PageTemplateDecorationEndpoints", "PageTemplateStrokePoints" })
+        {
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(table, reader.GetString(0));
+        }
         Assert.False(await reader.ReadAsync());
     }
 

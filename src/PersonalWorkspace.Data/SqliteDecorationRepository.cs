@@ -13,47 +13,48 @@ public sealed class SqliteDecorationRepository : IDecorationRepository
         await using var c = await SqliteConnectionFactory.OpenDatabaseAsync(w.DatabasePath, false, token);
         using var tx = c.BeginTransaction(deferred: change is null);
         var before = await Read(c, tx, page, token); var after = change?.Invoke(before) ?? before;
-        if (change is not null)
+        if (change is not null) await Write(c, tx, page, before, after, token);
+        await tx.CommitAsync(token); return after;
+    }
+    internal static async Task Write(SqliteConnection c, SqliteTransaction tx, Guid page, DecorationSnapshot before, DecorationSnapshot after, CancellationToken token)
+    {
+        foreach (var removed in before.Items.Where(i => !after.Items.Any(a => a.Id == i.Id)))
+            await Execute(c, tx, "DELETE FROM CanvasDecorations WHERE Id=$id AND PageId=$page", token, ("id", removed.Id), ("page", page));
+        foreach (var item in after.Items)
         {
-            foreach (var removed in before.Items.Where(i => !after.Items.Any(a => a.Id == i.Id)))
-                await Execute(c, tx, "DELETE FROM CanvasDecorations WHERE Id=$id AND PageId=$page", token, ("id", removed.Id), ("page", page));
-            foreach (var item in after.Items)
+            var old = before.Items.SingleOrDefault(i => i.Id == item.Id);
+            if (item == old) continue;
+            DecorationRules.Validate(item, before.Canvas);
+            if (item.PageId != page || old is not null && (old.Kind != item.Kind || old.CreatedAtUtc != item.CreatedAtUtc)) throw new DecorationValidationException("Decoration ownership cannot change.");
+            var written = await Execute(c, tx, """
+                INSERT INTO CanvasDecorations VALUES($id,$page,$kind,$z,$color,$width,$fill,$dash,$created,$updated)
+                ON CONFLICT(Id) DO UPDATE SET ZOrder=excluded.ZOrder,Color=excluded.Color,StrokeWidth=excluded.StrokeWidth,Filled=excluded.Filled,Dashed=excluded.Dashed,UpdatedAtUtc=excluded.UpdatedAtUtc WHERE PageId=excluded.PageId;
+                """, token, ("id",item.Id),("page",page),("kind",(int)item.Kind),("z",item.ZOrder),("color",(int)item.Style.Color),("width",item.Style.Width),("fill",item.Style.Filled),("dash",item.Style.Dashed),("created",item.CreatedAtUtc),("updated",item.UpdatedAtUtc));
+            if (written != 1) throw new DecorationValidationException("Decoration ownership cannot change.");
+            if (item.Bounds is { } rect && rect != old?.Bounds)
+                await Execute(c, tx, "INSERT INTO CanvasShapeSettings VALUES($id,$x,$y,$w,$h) ON CONFLICT(DecorationId) DO UPDATE SET X=excluded.X,Y=excluded.Y,Width=excluded.Width,Height=excluded.Height", token,
+                    ("id",item.Id),("x",rect.X),("y",rect.Y),("w",rect.Width),("h",rect.Height));
+            if (item.Start is not null) for (var slot = 0; slot < 2; slot++)
             {
-                var old = before.Items.SingleOrDefault(i => i.Id == item.Id);
-                if (item == old) continue;
-                DecorationRules.Validate(item, before.Canvas);
-                if (item.PageId != page || old is not null && (old.Kind != item.Kind || old.CreatedAtUtc != item.CreatedAtUtc)) throw new DecorationValidationException("Decoration ownership cannot change.");
-                var written = await Execute(c, tx, """
-                    INSERT INTO CanvasDecorations VALUES($id,$page,$kind,$z,$color,$width,$fill,$dash,$created,$updated)
-                    ON CONFLICT(Id) DO UPDATE SET ZOrder=excluded.ZOrder,Color=excluded.Color,StrokeWidth=excluded.StrokeWidth,Filled=excluded.Filled,Dashed=excluded.Dashed,UpdatedAtUtc=excluded.UpdatedAtUtc WHERE PageId=excluded.PageId;
-                    """, token, ("id",item.Id),("page",page),("kind",(int)item.Kind),("z",item.ZOrder),("color",(int)item.Style.Color),("width",item.Style.Width),("fill",item.Style.Filled),("dash",item.Style.Dashed),("created",item.CreatedAtUtc),("updated",item.UpdatedAtUtc));
-                if (written != 1) throw new DecorationValidationException("Decoration ownership cannot change.");
-                if (item.Bounds is { } rect && rect != old?.Bounds)
-                    await Execute(c, tx, "INSERT INTO CanvasShapeSettings VALUES($id,$x,$y,$w,$h) ON CONFLICT(DecorationId) DO UPDATE SET X=excluded.X,Y=excluded.Y,Width=excluded.Width,Height=excluded.Height", token,
-                        ("id",item.Id),("x",rect.X),("y",rect.Y),("w",rect.Width),("h",rect.Height));
-                if (item.Start is not null) for (var slot = 0; slot < 2; slot++)
+                var endpoint = slot == 0 ? item.Start : item.End!;
+                if (endpoint == (slot == 0 ? old?.Start : old?.End)) continue;
+                await Execute(c, tx, "INSERT INTO CanvasDecorationEndpoints VALUES($id,$slot,$x,$y,$target,$anchor) ON CONFLICT(DecorationId,Endpoint) DO UPDATE SET X=excluded.X,Y=excluded.Y,TargetCanvasItemId=excluded.TargetCanvasItemId,Anchor=excluded.Anchor", token,
+                    ("id",item.Id),("slot",slot),("x",endpoint.Point.X),("y",endpoint.Point.Y),("target",endpoint.Target),("anchor",(int)endpoint.Anchor));
+            }
+            if (item.Points is { } points && !ReferenceEquals(points, old?.Points))
+            {
+                await Execute(c, tx, "DELETE FROM CanvasStrokePoints WHERE DecorationId=$id", token, ("id",item.Id));
+                using var cmd = Command(c, tx, "INSERT INTO CanvasStrokePoints VALUES($id,$index,$x,$y)", ("id",item.Id),("index",0),("x",0d),("y",0d));
+                cmd.Prepare();
+                for (var i = 0; i < points.Count; i++)
                 {
-                    var endpoint = slot == 0 ? item.Start : item.End!;
-                    if (endpoint == (slot == 0 ? old?.Start : old?.End)) continue;
-                    await Execute(c, tx, "INSERT INTO CanvasDecorationEndpoints VALUES($id,$slot,$x,$y,$target,$anchor) ON CONFLICT(DecorationId,Endpoint) DO UPDATE SET X=excluded.X,Y=excluded.Y,TargetCanvasItemId=excluded.TargetCanvasItemId,Anchor=excluded.Anchor", token,
-                        ("id",item.Id),("slot",slot),("x",endpoint.Point.X),("y",endpoint.Point.Y),("target",endpoint.Target),("anchor",(int)endpoint.Anchor));
-                }
-                if (item.Points is { } points && !ReferenceEquals(points, old?.Points))
-                {
-                    await Execute(c, tx, "DELETE FROM CanvasStrokePoints WHERE DecorationId=$id", token, ("id",item.Id));
-                    using var cmd = Command(c, tx, "INSERT INTO CanvasStrokePoints VALUES($id,$index,$x,$y)", ("id",item.Id),("index",0),("x",0d),("y",0d));
-                    cmd.Prepare();
-                    for (var i = 0; i < points.Count; i++)
-                    {
-                        cmd.Parameters["$index"].Value = i; cmd.Parameters["$x"].Value = points[i].X; cmd.Parameters["$y"].Value = points[i].Y;
-                        await cmd.ExecuteNonQueryAsync(token);
-                    }
+                    cmd.Parameters["$index"].Value = i; cmd.Parameters["$x"].Value = points[i].X; cmd.Parameters["$y"].Value = points[i].Y;
+                    await cmd.ExecuteNonQueryAsync(token);
                 }
             }
         }
-        await tx.CommitAsync(token); return after;
     }
-    private static async Task<DecorationSnapshot> Read(SqliteConnection c, SqliteTransaction tx, Guid page, CancellationToken token)
+    internal static async Task<DecorationSnapshot> Read(SqliteConnection c, SqliteTransaction tx, Guid page, CancellationToken token)
     {
         var canvas = await SqliteCanvasRepository.Read(c, tx, page, token); var items = new Dictionary<Guid, CanvasDecoration>();
         using (var cmd = Command(c, tx, "SELECT d.*,s.X,s.Y,s.Width,s.Height FROM CanvasDecorations d LEFT JOIN CanvasShapeSettings s ON s.DecorationId=d.Id WHERE d.PageId=$page ORDER BY d.ZOrder,d.Id", ("page",page)))

@@ -70,6 +70,8 @@ public sealed class AssetService(IAssetRepository repository, IAssetFileStore fi
             token.ThrowIfCancellationRequested();
             try
             {
+                // Recheck BOTH ownership classes under the workspace gate immediately before file deletion.
+                if (!await repository.CanCleanupAsync(w, asset.Id, token)) { pending.Add(asset.Id); continue; }
                 AssetPaths.ValidateIdentity(asset.Id, asset.StorageRelativePath); files.Delete(w.ProfileId, asset.StorageRelativePath);
                 await repository.FinishCleanupAsync(w, asset.Id, false, token); removed++;
             }

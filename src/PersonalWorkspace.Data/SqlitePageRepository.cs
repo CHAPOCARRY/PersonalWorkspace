@@ -11,7 +11,7 @@ public sealed class SqlitePageRepository : IPageRepository
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
         return await Read(connection, null, token);
     }
-    private static async Task<PageGraph> Read(SqliteConnection connection, SqliteTransaction? transaction, CancellationToken token)
+    internal static async Task<PageGraph> Read(SqliteConnection connection, SqliteTransaction? transaction, CancellationToken token)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT w.Id,w.Title,w.CreatedAtUtc,w.UpdatedAtUtc,w.ArchivedAtUtc,w.DeletedAtUtc,p.ParentPageId,p.SortOrder,p.Icon FROM Pages p JOIN WorkspaceItems w ON w.Id=p.ItemId ORDER BY p.SortOrder,p.ItemId;";
@@ -24,6 +24,11 @@ public sealed class SqlitePageRepository : IPageRepository
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
         using var transaction = connection.BeginTransaction(deferred: false); var graph = await Read(connection, transaction, token);
         var before = graph.Pages.ToDictionary(); var result = change(graph);
+        await Write(connection, transaction, before, graph, token);
+        await transaction.CommitAsync(token); return result;
+    }
+    internal static async Task Write(SqliteConnection connection, SqliteTransaction transaction, IReadOnlyDictionary<Guid, PageItem> before, PageGraph graph, CancellationToken token)
+    {
         // Save surviving children before deleting parents. FK SET NULL remains the final safety net.
         foreach (var page in graph.Pages.Values)
         {
@@ -47,7 +52,6 @@ public sealed class SqlitePageRepository : IPageRepository
             command.CommandText = "DELETE FROM WorkspaceItems WHERE Id=$id AND ItemType=5 AND DeletedAtUtc IS NOT NULL;"; Add(command, "$id", id);
             if (await command.ExecuteNonQueryAsync(token) != 1) throw new PageValidationException("Move the Page to Trash before deleting it.");
         }
-        await transaction.CommitAsync(token); return result;
     }
     private static DateTimeOffset? Utc(SqliteDataReader reader, int index) => reader.IsDBNull(index) ? null : DateTimeOffset.Parse(reader.GetString(index), CultureInfo.InvariantCulture);
     private static void Add(SqliteCommand command, string name, object? value) => command.Parameters.AddWithValue(name, value switch { null => DBNull.Value, Guid id => id.ToString("D"), DateTimeOffset utc => utc.ToUniversalTime().ToString("O"), _ => value });

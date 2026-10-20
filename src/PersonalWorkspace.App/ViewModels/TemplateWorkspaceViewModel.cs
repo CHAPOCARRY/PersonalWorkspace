@@ -11,6 +11,10 @@ public sealed record TemplateRow(TemplateReference Reference, TemplateMetadata M
     public string Name => Metadata.Name;
     public string Detail => $"{Metadata.Type} · {Metadata.UpdatedAtUtc.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)} · {Metadata.Id.ToString("N")[..8]}";
 }
+public sealed record TemplatePageDestination(Guid? Id, string Title)
+{
+    public override string ToString() => Id is { } id ? $"{Title} · {id.ToString("N")[..8]}" : "Root";
+}
 public sealed partial class TemplateWorkspaceViewModel : ObservableObject
 {
     private readonly ITemplateService service;
@@ -24,6 +28,7 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     private TemplateType sourceType = TemplateType.Task;
     private TemplateSource? source;
     private TemplateRow? selected;
+    private TemplatePageDestination? destination;
     private string name = "", description = "", newTitle = "", captureName = "", captureDescription = "";
     public TemplateWorkspaceViewModel(ITemplateService service, ICurrentProfile current, INavigationService navigation, ILogger<TemplateWorkspaceViewModel> logger)
     {
@@ -38,7 +43,10 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     public bool CanUse => IsIdle && HasSelection;
     public bool CanCapture => IsIdle && Source is not null;
     public bool CanReplace => CanUse && Source?.Type == Snapshot?.Metadata.Type;
-    public IReadOnlyList<string> Filters { get; } = ["All", "Task", "List", "Journal"];
+    public IReadOnlyList<string> Filters { get; } = ["All", "Task", "List", "Journal", "Page"];
+    public bool IsPageTemplate => Snapshot?.Metadata.Type == TemplateType.Page;
+    public IReadOnlyList<TemplatePageDestination> Destinations { get; private set; } = [new(null, "Root")];
+    public TemplatePageDestination? Destination { get => destination; set => SetProperty(ref destination, value); }
     public IReadOnlyList<TemplateType> Types { get; } = Enum.GetValues<TemplateType>();
     public IReadOnlyList<TemplateRow> Rows { get; private set; } = [];
     public IReadOnlyList<TemplateSource> Sources { get; private set; } = [];
@@ -47,7 +55,7 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     public string? Error { get; private set; }
     public string? Notice { get; private set; }
     public string Filter { get => filter; set { if (SetProperty(ref filter, value)) { ClearDetail(); _ = ReloadAsync(); } } }
-    public TemplateType SourceType { get => sourceType; set { if (SetProperty(ref sourceType, value)) { Source = null; Sources = []; _ = ReloadAsync(); } } }
+    public TemplateType SourceType { get => sourceType; set { if (SetProperty(ref sourceType, value)) { Source = null; Sources = []; OnPropertyChanged(nameof(Sources)); _ = ReloadAsync(); } } }
     public TemplateSource? Source { get => source; set { if (SetProperty(ref source, value)) { if (value is not null) CaptureName = value.Title; Notify(); } } }
     public TemplateRow? Selected { get => selected; set { if (SetProperty(ref selected, value)) _ = SelectAsync(value); } }
     public string Name { get => name; set => SetProperty(ref name, value); }
@@ -63,9 +71,17 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
         {
             var rows = await service.CatalogAsync(profile.Id, Filter == "All" ? null : Enum.Parse<TemplateType>(Filter));
             var sources = await service.SourcesAsync(profile.Id, SourceType);
+            var parents = SourceType == TemplateType.Page ? sources : await service.SourcesAsync(profile.Id, TemplateType.Page);
             if (!Fresh(request, profile.Id)) return;
+            var destinationId = Destination?.Id;
+            var sourceReference = Source?.Reference;
+            Destinations = new[] { new TemplatePageDestination(null, "Root") }.Concat(parents.Select(p => new TemplatePageDestination(p.Reference.ItemId, p.Title))).ToArray();
             Rows = rows.Select(m => new TemplateRow(new(profile.Id, m.Id), m)).ToArray(); Sources = sources;
-            source = source is { } old ? sources.SingleOrDefault(s => s.Reference == old.Reference) : null;
+            // ComboBox clears SelectedItem while its ItemsSource changes. Publish the new
+            // collections first, then restore selections using identities from before refresh.
+            NotifyCollections();
+            Destination = Destinations.FirstOrDefault(d => d.Id == destinationId) ?? Destinations[0];
+            source = sources.SingleOrDefault(s => s.Reference == sourceReference);
             OnPropertyChanged(nameof(Source));
         }
         catch (Exception e) { if (Fresh(request, profile.Id)) Report(e); }
@@ -92,7 +108,8 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     }) : Task.CompletedTask;
     [RelayCommand] private Task InstantiateAsync() => CurrentReference() is { } reference ? Execute(async () =>
     {
-        var item = await service.InstantiateAsync(reference, NewTitle); return $"Created {item.ItemType} “{item.Title}”. Open it in {item.ItemType switch { WorkspaceItemType.Task => "Tasks", WorkspaceItemType.List => "Lists", _ => "Journal" }}.";
+        var item = IsPageTemplate ? await service.InstantiatePageAsync(reference, NewTitle, Destination?.Id) : await service.InstantiateAsync(reference, NewTitle);
+        return $"Created {item.ItemType} “{item.Title}”. Open it in {item.ItemType switch { WorkspaceItemType.Task => "Tasks", WorkspaceItemType.List => "Lists", WorkspaceItemType.Page => "Pages", _ => "Journal" }}.";
     }) : Task.CompletedTask;
     [RelayCommand] private Task SaveMetadataAsync() => CurrentReference() is { } reference ? Execute(async () =>
     { await service.RenameAsync(reference, Name, Description); return "Template name and description saved."; }) : Task.CompletedTask;
@@ -126,11 +143,13 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     private void ClearDetail(bool clearRow = true)
     {
         Snapshot = null; Name = Description = NewTitle = ""; Preview = "Select a template to preview its saved definition.";
+        Destination = Destinations.FirstOrDefault(d => d.Id is null);
         if (clearRow) { selected = null; OnPropertyChanged(nameof(Selected)); }
     }
     private void Clear()
     {
         ++revision; loading = false; Rows = []; Sources = []; source = null; filter = "All"; sourceType = TemplateType.Task;
+        Destinations = [new(null, "Root")]; NotifyCollections(); Destination = Destinations[0];
         CaptureName = CaptureDescription = ""; ClearDetail(); Error = Notice = null;
         OnPropertyChanged(nameof(Source)); OnPropertyChanged(nameof(Filter)); OnPropertyChanged(nameof(SourceType)); Notify();
     }
@@ -141,10 +160,16 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     }
     private void Notify()
     {
-        foreach (var property in new[] { nameof(IsArea), nameof(IsBusy), nameof(IsIdle), nameof(HasSelection), nameof(CanUse), nameof(CanCapture), nameof(CanReplace), nameof(Rows), nameof(Sources), nameof(Snapshot), nameof(Preview), nameof(Error), nameof(Notice) }) OnPropertyChanged(property);
+        foreach (var property in new[] { nameof(IsArea), nameof(IsBusy), nameof(IsIdle), nameof(HasSelection), nameof(CanUse), nameof(CanCapture), nameof(CanReplace), nameof(Snapshot), nameof(Preview), nameof(Error), nameof(Notice), nameof(IsPageTemplate) }) OnPropertyChanged(property);
+    }
+    private void NotifyCollections()
+    {
+        OnPropertyChanged(nameof(Rows)); OnPropertyChanged(nameof(Sources)); OnPropertyChanged(nameof(Destinations));
     }
     public static string Describe(TemplateBlueprint blueprint) => blueprint switch
     {
+        PageBlueprint p => $"{p.Title}\n{p.Canvas.Items.Count(i => i.Kind == CanvasKind.Block)} Blocks · {p.Canvas.Items.Count(i => i.Kind == CanvasKind.Container)} Containers · {p.Widgets.Count} Widgets · {p.Decorations.Count} Decorations\n" +
+            string.Join(", ", p.Widgets.Select(w => w.Widget.Type).Distinct().Order()) + $"\nLayout {(p.Canvas.Settings.LayoutLocked ? "locked" : "unlocked")} · Zoom {p.Canvas.Settings.ZoomPercent}%\nSingle Page, without child Pages. Rich text is copied independently; canonical sources and attachment files are shared.",
         TaskBlueprint t => $"{t.Title}\n{t.Definition.Description}\nPriority: {t.Definition.Priority}\n" + (t.Definition.Value is { } v ? $"{v.Type} · Target { (v.Type == TaskValueType.Duration ? ExactValueText.Duration((long)v.Target) : ExactValueText.Input(v.Target)) } {v.Unit ?? v.CurrencyCode}" : "Checkbox") + "\nNew Task: ToDo, no Actual, no scheduled date.",
         ListBlueprint l => $"{l.Title}\n{l.Definition.Description}\nQuantity: {l.Definition.ShowQuantity} · Prices: {l.Definition.ShowPrices} {l.Definition.CurrencyCode}\n" + string.Join("\n", l.Items.Select((i, n) => $"{n + 1}. {i.Title}" + (i.Quantity is { } q ? $" · Qty {ExactValueText.Input(q)}" : "") + (i.UnitPrice is { } p ? $" · Price {ExactValueText.Input(p)}" : "") + (i.Note is null ? "" : $"\n   {i.Note}") + (i.Link is null ? "" : $"\n   {i.Link}"))) + "\nAll new items start unchecked.",
         JournalBlueprint j => $"{j.Title}\n{j.Description}\n" + string.Join("\n", j.Fields.Select((f, i) => $"{i + 1}. {f.Name} · {f.Type}" + (f.Type == JournalFieldType.Scale ? $" {f.ScaleMin}–{f.ScaleMax}" : "") + (f.CurrencyCode is null ? "" : $" {f.CurrencyCode}") + (f.Options is { Count: > 0 } options ? " · " + string.Join(", ", options.Select(o => o.Label)) : ""))) + "\nNew Journal: fresh fields and options, no saved entries.",

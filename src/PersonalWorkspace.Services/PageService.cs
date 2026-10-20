@@ -8,9 +8,7 @@ public sealed class PageService(IPageRepository repository, ICurrentProfile curr
     public Task<PageGraph> GetAsync(Guid profileId, CancellationToken token = default) => Run(profileId, w => repository.GetAsync(w, token), token);
     public Task<PageItem> CreateAsync(Guid profileId, string title, Guid? parent = null, PageIcon icon = PageIcon.None, CancellationToken token = default) => Change(profileId, graph =>
     {
-        var id = Guid.NewGuid(); graph.ValidateParent(id, parent); var now = clock.GetUtcNow();
-        var page = new PageItem(new(id, WorkspaceItemType.Page, Title(title), now, now, null, null), parent, graph.Children(parent).Count, Icon(icon));
-        graph.Pages.Add(id, page); return page;
+        return PageCreation.Create(graph, title, parent, icon, clock.GetUtcNow());
     }, token);
     public Task<PageItem> UpdateAsync(WorkspaceItemReference reference, string title, PageIcon icon, CancellationToken token = default) => Change(reference.ProfileId, graph =>
     {
