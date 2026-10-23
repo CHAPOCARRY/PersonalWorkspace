@@ -46,7 +46,7 @@ public sealed partial class TrackerTests
         var snapshots=new Dictionary<string,string>();foreach(var t in tables)snapshots[t]=await TableRows(legacy,t);
         await initializer.InitializeAsync(legacy,false);await initializer.InitializeAsync(legacy,false);
         foreach(var t in tables)Assert.Equal(snapshots[t],await TableRows(legacy,t));
-        Assert.Equal(19L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(14L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
+        Assert.Equal(20L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(14L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
         Assert.Null(await Sql("PRAGMA foreign_key_check;",legacy)); Assert.Empty(Directory.GetFiles(paths.ProfileAttachments(legacy),"*",SearchOption.AllDirectories));
         await using var global=await new SqliteConnectionFactory(paths).OpenAsync();using var command=global.CreateCommand();command.CommandText="SELECT COUNT(*) FROM sqlite_master WHERE name IN ('Assets','RichTextDocuments')";Assert.Equal(0L,await command.ExecuteScalarAsync());
     }

@@ -27,6 +27,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
     private Guid? observedProfile, selected, createParent;
     private int revision;
     private bool busy, loading, creating;
+    private bool searchNavigationPending = true;
     private PageCollection collection;
     private string title = "";
     private PageIcon icon;
@@ -39,7 +40,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
         Canvas = canvas;
         if (Canvas is not null) Canvas.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Canvas.IsBusy)) Notify(); };
         observedProfile = current.Current?.Id;
-        navigation.Changed += (_, _) => { Canvas?.Clear(); creating = false; Notify(); _ = ReloadAsync(); };
+        navigation.Changed += (_, _) => { searchNavigationPending = true; Canvas?.Clear(); creating = false; Notify(); _ = ReloadAsync(); };
         current.Changed += (_, _) =>
         {
             if (observedProfile == current.Current?.Id) return;
@@ -77,7 +78,7 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
     public void Clear()
     {
         Canvas?.Clear();
-        ++revision; graph = new([]); selected = createParent = null; collapsed.Clear(); collection = PageCollection.Active;
+        ++revision; searchNavigationPending = true; graph = new([]); selected = createParent = null; collapsed.Clear(); collection = PageCollection.Active;
         Rows = []; Breadcrumbs = []; Children = []; Assignments = []; ParentChoices = []; ParentChoice = null;
         creating = loading = false; Title = ""; Icon = PageIcon.None; Error = null; Notify();
     }
@@ -89,10 +90,15 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
         try
         {
             if (profile is null) { Clear(); return; }
+            if (navigation.Current.Context is { } context && context.ProfileId != profile) throw new WorkspaceChangedException();
+            var explicitContext = navigation.Current.Context;
             var data = await service.GetAsync(profile.Value); var catalog = await organization.GetAsync(profile.Value);
             if (request != revision || profile != current.Current?.Id) return;
             graph = data;
+            if (searchNavigationPending && explicitContext is not null) collection = explicitContext.Archived ? PageCollection.Archived : PageCollection.Active;
             if (Guid.TryParse(navigation.Current.EntityId, out var routeId)) selected = routeId;
+            if (explicitContext is not null && (selected is not { } exact || !graph.Pages.TryGetValue(exact, out var exactPage) || !exactPage.Matches(collection)))
+                throw new PageValidationException("This Page is no longer available. Search again.");
             if (selected is { } id && (!graph.Pages.TryGetValue(id, out var found) || !found.Matches(collection))) selected = null;
             selected ??= graph.Pages.Values.Where(p => p.Matches(collection)).OrderBy(p => p.ParentPageId.HasValue).ThenBy(p => p.SortOrder).ThenBy(p => p.Item.Id).Select(p => (Guid?)p.Item.Id).FirstOrDefault();
             BuildRows(); Breadcrumbs = []; Children = []; Assignments = []; ParentChoices = [];
@@ -107,8 +113,19 @@ public sealed partial class PageWorkspaceViewModel : ObservableObject
                 Assignments = catalog.Tags.Select(t => new OrganizationChoice(reference, t.Id, OrganizationKind.Tag, t.Name, t.Color, catalog.ItemTags.Contains(new(page.Item.Id, t.Id))))
                     .Concat(catalog.Spaces.Where(s => s.ArchivedAtUtc is null || catalog.ItemSpaces.Contains(new(page.Item.Id, s.Id))).Select(s => new OrganizationChoice(reference, s.Id, OrganizationKind.Space, s.Name, s.Color, catalog.ItemSpaces.Contains(new(page.Item.Id, s.Id)), s.ArchivedAtUtc is not null))).ToArray();
                 if (!creating) { Title = page.Item.Title; Icon = page.Icon; }
-                if (!creating && Canvas is not null) await Canvas.OpenAsync(reference);
+                if (!creating && Canvas is not null)
+                {
+                    await Canvas.OpenAsync(reference);
+                    if (request != revision || profile != current.Current?.Id) return;
+                    if (explicitContext?.ChildId is { } widgetId)
+                    {
+                        var widget = Canvas.Widgets?.Page?.Widgets.SingleOrDefault(w => w.Id == widgetId);
+                        if (widget is not null) Canvas.Select(widget.CanvasItemId);
+                        else if (searchNavigationPending) throw new PageValidationException("This Page content is no longer available. Search again.");
+                    }
+                }
             }
+            searchNavigationPending = false;
         }
         catch (Exception exception) { if (request == revision) { graph = new([]); selected = null; Rows = []; Breadcrumbs = []; Children = []; Assignments = []; ParentChoices = []; Report(exception); } }
         finally { if (request == revision) { loading = false; Notify(); } }

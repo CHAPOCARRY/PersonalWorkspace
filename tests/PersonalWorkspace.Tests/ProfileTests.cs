@@ -102,6 +102,11 @@ public sealed class ProfileTests : IAsyncLifetime
             Assert.True(await reader.ReadAsync());
             Assert.Equal(table, reader.GetString(0));
         }
+        foreach (var table in new[] { "SearchIndexState", "SearchDirtyDocuments", "SearchDocuments", "SearchDocumentsFts", "SearchDocumentsFts_data", "SearchDocumentsFts_idx", "SearchDocumentsFts_docsize", "SearchDocumentsFts_config" })
+        {
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(table, reader.GetString(0));
+        }
         Assert.False(await reader.ReadAsync());
     }
 

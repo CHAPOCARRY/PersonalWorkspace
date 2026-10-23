@@ -152,7 +152,7 @@ public sealed partial class CanvasWorkspaceView
     }
     private void OnDecorationTool(object sender, SelectionChangedEventArgs args)
     {
-        if (decorationRendering || Drawing is not { } drawing || DecorationToolPicker.SelectedItem is not DecorationTool tool) return;
+        if (decorationRendering || Drawing is not { } drawing || DecorationToolPicker.SelectedItem is not DecorationTool tool || tool == drawing.Tool) return;
         Cancel(); CancelDecorationGesture(); model!.Select(null); drawing.SetTool(tool); styledDecoration = null; Render();
     }
     private void DecorationPressed(object sender, PointerRoutedEventArgs args)

@@ -24,6 +24,7 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     private Guid? observedProfile;
     private int revision;
     private bool busy, loading;
+    private bool searchNavigationPending = true;
     private string filter = "All";
     private TemplateType sourceType = TemplateType.Task;
     private TemplateSource? source;
@@ -69,6 +70,8 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
         var request = ++revision; loading = true; Error = null; Notify();
         try
         {
+            var route = navigation.Current;
+            if (route.Context is { } context && context.ProfileId != profile.Id) throw new WorkspaceChangedException();
             var rows = await service.CatalogAsync(profile.Id, Filter == "All" ? null : Enum.Parse<TemplateType>(Filter));
             var sources = await service.SourcesAsync(profile.Id, SourceType);
             var parents = SourceType == TemplateType.Page ? sources : await service.SourcesAsync(profile.Id, TemplateType.Page);
@@ -83,6 +86,14 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
             Destination = Destinations.FirstOrDefault(d => d.Id == destinationId) ?? Destinations[0];
             source = sources.SingleOrDefault(s => s.Reference == sourceReference);
             OnPropertyChanged(nameof(Source));
+            if (searchNavigationPending && route.Context is not null && Guid.TryParse(route.EntityId, out var templateId))
+            {
+                var target = Rows.SingleOrDefault(r => r.Reference.Id == templateId) ?? throw new TemplateValidationException("This Template is no longer available. Search again.");
+                // Apply the search target once. Later filtering, editing and deletion belong
+                // to the catalog and must not replay a now-hidden or deleted target.
+                searchNavigationPending = false;
+                selected = target; OnPropertyChanged(nameof(Selected)); await SelectAsync(target);
+            }
         }
         catch (Exception e) { if (Fresh(request, profile.Id)) Report(e); }
         finally { if (request == revision) { loading = false; Notify(); } }
@@ -148,7 +159,7 @@ public sealed partial class TemplateWorkspaceViewModel : ObservableObject
     }
     private void Clear()
     {
-        ++revision; loading = false; Rows = []; Sources = []; source = null; filter = "All"; sourceType = TemplateType.Task;
+        ++revision; loading = false; searchNavigationPending = true; Rows = []; Sources = []; source = null; filter = "All"; sourceType = TemplateType.Task;
         Destinations = [new(null, "Root")]; NotifyCollections(); Destination = Destinations[0];
         CaptureName = CaptureDescription = ""; ClearDetail(); Error = Notice = null;
         OnPropertyChanged(nameof(Source)); OnPropertyChanged(nameof(Filter)); OnPropertyChanged(nameof(SourceType)); Notify();
