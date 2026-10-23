@@ -20,6 +20,9 @@ internal static class CompositionRoot
         services.AddSingleton<IDatabaseInitializer, DatabaseInitializer>();
         services.AddSingleton<ISettingsService, SqliteSettingsService>();
         services.AddSingleton<IWorkspaceOperationGate, WorkspaceOperationGate>();
+        services.AddSingleton<ISearchRepository, SqliteSearchRepository>();
+        services.AddSingleton<ISearchService, SearchService>();
+        services.AddSingleton<SearchViewModel>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<AssetPaths>();
         services.AddSingleton<IAssetFileStore, AssetFileStore>();

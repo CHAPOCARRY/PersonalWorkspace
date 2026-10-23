@@ -52,7 +52,7 @@ public sealed partial class TrackerTests
         var snapshots = new Dictionary<string,string>(); foreach (var table in tables) snapshots[table] = await TableRows(legacy, table);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
         foreach (var table in tables) Assert.Equal(snapshots[table], await TableRows(legacy, table));
-        Assert.Equal("Keep", await File.ReadAllTextAsync(physical)); Assert.Equal(19L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal("Keep", await File.ReadAllTextAsync(physical)); Assert.Equal(20L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(15L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Null(await Sql("PRAGMA foreign_key_check;", legacy));
     }

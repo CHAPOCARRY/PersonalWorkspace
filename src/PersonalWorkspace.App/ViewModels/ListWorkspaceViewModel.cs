@@ -13,6 +13,7 @@ public sealed record ListRow(WorkspaceItemReference Reference, ListDefinition De
 }
 public sealed record ListItemRow(ListItemReference Reference, ListItem Item, bool ShowQuantity, bool ShowPrices, string? Currency)
 {
+    public bool SearchMatch { get; init; }
     public string Title => Item.Title;
     public bool IsChecked => Item.IsChecked;
     public double Opacity => IsChecked ? 0.6 : 1;
@@ -21,6 +22,7 @@ public sealed record ListItemRow(ListItemReference Reference, ListItem Item, boo
     public string ActionsLabel => "Actions for " + Title;
     public override string ToString() => Title + (IsChecked ? " · Checked" : " · Unchecked") + (Detail.Length == 0 ? "" : " · " + Detail);
     public string Detail => string.Join(" · ", new[] {
+        SearchMatch ? "Search result" : null,
         ShowQuantity && Item.Quantity is { } quantity ? "Qty " + ExactValueText.Input(quantity) : null,
         ShowPrices && Item.UnitPrice is { } price ? "Unit " + Money(price, Currency) + " · Subtotal " + Money(ListRules.Subtotal(Item)!.Value, Currency) : null,
         Item.Note is not null ? "Note" : null, Item.Link is not null ? "Link" : null }.Where(s => s is not null));
@@ -37,6 +39,7 @@ public sealed partial class ListWorkspaceViewModel : ObservableObject
     private Guid? observedProfile, selected, editing;
     private int revision;
     private bool busy, loading, creating;
+    private bool searchNavigationPending = true;
     private ListCollection collection;
     private ListFilter filter;
     private string search = "";
@@ -71,7 +74,7 @@ public sealed partial class ListWorkspaceViewModel : ObservableObject
     {
         this.service = service; this.organization = organization; this.current = current; this.navigation = navigation; this.logger = logger;
         observedProfile = current.Current?.Id;
-        navigation.Changed += (_, _) => { ++revision; loading = false; creating = false; ClearDetail(); Notify(); _ = ReloadAsync(); };
+        navigation.Changed += (_, _) => { ++revision; searchNavigationPending = true; loading = false; creating = false; ClearDetail(); Notify(); _ = ReloadAsync(); };
         current.Changed += (_, _) => { if (observedProfile == current.Current?.Id) return; observedProfile = current.Current?.Id; Clear(); if (IsArea && navigation.Current.EntityId is not null) navigation.Navigate(new("Lists")); else _ = ReloadAsync(); };
     }
     public bool IsArea => navigation.Current.Destination == "Lists";
@@ -100,7 +103,7 @@ public sealed partial class ListWorkspaceViewModel : ObservableObject
     public string Search { get => search; set { if (SetProperty(ref search, value)) { BuildItems(); Notify(); } } }
     public void Clear()
     {
-        ++revision; selected = null; collection = ListCollection.Active; filter = ListFilter.All; search = ""; creating = loading = false;
+        ++revision; searchNavigationPending = true; selected = null; collection = ListCollection.Active; filter = ListFilter.All; search = ""; creating = loading = false;
         Rows = []; ClearDetail(); Title = Description = CurrencyCode = ""; ShowQuantity = ShowPrices = false; Error = Notice = null; Notify();
     }
     private void ClearDetail() { snapshot = null; Items = []; Assignments = []; QuickTitle = ""; ResetItem(); }
@@ -112,15 +115,25 @@ public sealed partial class ListWorkspaceViewModel : ObservableObject
         try
         {
             if (profile is null) { Clear(); return; }
+            if (navigation.Current.Context is { } context && context.ProfileId != profile) throw new WorkspaceChangedException();
+            var explicitContext = navigation.Current.Context;
+            if (searchNavigationPending && explicitContext is not null) { collection = explicitContext.Archived ? ListCollection.Archived : ListCollection.Active; filter = ListFilter.All; search = ""; }
             var definitions = await service.GetDefinitionsAsync(profile.Value);
             if (request != revision || profile != current.Current?.Id) return;
             var eligible = definitions.Where(d => d.Matches(collection)).ToArray();
             var chosen = Guid.TryParse(navigation.Current.EntityId, out var route) ? (Guid?)route : selected;
+            if (explicitContext is not null && !eligible.Any(d => d.Item.Id == chosen)) throw new ListValidationException("This List is no longer available. Search again.");
             var definition = eligible.FirstOrDefault(d => d.Item.Id == chosen) ?? eligible.FirstOrDefault();
             var detail = definition is null ? null : await service.ReadAsync(new(profile.Value, definition.Item.Id));
             var catalog = await organization.GetAsync(profile.Value);
             if (request != revision || profile != current.Current?.Id) return;
             Rows = eligible.Select(d => new ListRow(new(profile.Value, d.Item.Id), d)).ToArray(); selected = definition?.Item.Id; snapshot = detail; ResetItem();
+            if (searchNavigationPending && explicitContext?.ChildId is { } child)
+            {
+                var matched = detail?.Items.SingleOrDefault(i => i.Id == child) ?? throw new ListValidationException("This List item is no longer available. Search again.");
+                Notice = "Search result: " + matched.Title;
+                search = matched.Title;
+            }
             Assignments = [];
             if (definition is not null)
             {
@@ -129,12 +142,13 @@ public sealed partial class ListWorkspaceViewModel : ObservableObject
                     .Concat(catalog.Spaces.Where(s => s.ArchivedAtUtc is null || catalog.ItemSpaces.Contains(new(definition.Item.Id, s.Id))).Select(s => new OrganizationChoice(reference, s.Id, OrganizationKind.Space, s.Name, s.Color, catalog.ItemSpaces.Contains(new(definition.Item.Id, s.Id)), s.ArchivedAtUtc is not null))).ToArray();
                 if (!creating) { Title = definition.Item.Title; Description = definition.Description; ShowQuantity = definition.ShowQuantity; ShowPrices = definition.ShowPrices; CurrencyCode = definition.CurrencyCode ?? ""; }
             }
+            searchNavigationPending = false;
             BuildItems();
         }
         catch (Exception exception) { if (request == revision) { ClearDetail(); Rows = []; selected = null; Report(exception); } }
         finally { if (request == revision) { loading = false; Notify(); } }
     }
-    private void BuildItems() => Items = snapshot is { } data && current.Current is { } profile ? data.Items.Where(i => ListRules.Matches(i, filter, search)).Select(i => new ListItemRow(new(profile.Id, i.ListId, i.Id), i, data.Definition.ShowQuantity, data.Definition.ShowPrices, data.Definition.CurrencyCode)).ToArray() : [];
+    private void BuildItems() => Items = snapshot is { } data && current.Current is { } profile ? data.Items.Where(i => ListRules.Matches(i, filter, search)).Select(i => new ListItemRow(new(profile.Id, i.ListId, i.Id), i, data.Definition.ShowQuantity, data.Definition.ShowPrices, data.Definition.CurrencyCode) { SearchMatch = navigation.Current.Context?.ChildId == i.Id }).ToArray() : [];
     [RelayCommand] private void Open(ListRow? row)
     {
         if (!IsIdle || row is null || row.Reference.ProfileId != current.Current?.Id) return;

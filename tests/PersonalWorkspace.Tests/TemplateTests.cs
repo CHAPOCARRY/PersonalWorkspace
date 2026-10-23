@@ -39,7 +39,7 @@ public sealed partial class TrackerTests
         var before=new Dictionary<string,string>();foreach(var table in tables)before[table]=await TableRows(legacy,table);
         await initializer.InitializeAsync(legacy,false);await initializer.InitializeAsync(legacy,false);
         foreach(var table in tables)Assert.Equal(before[table],await TableRows(legacy,table));
-        Assert.Equal(19L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(17L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
+        Assert.Equal(20L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));Assert.Equal(17L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
         Assert.Equal(0L,await Sql("SELECT COUNT(*) FROM Templates;",legacy));Assert.Null(await Sql("PRAGMA foreign_key_check;",legacy));Assert.Equal("ok",await Sql("PRAGMA integrity_check;",legacy));
         await using var global=await new SqliteConnectionFactory(paths).OpenAsync();using var check=global.CreateCommand();check.CommandText="SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%Template%'";Assert.Equal(0L,await check.ExecuteScalarAsync());
     }
@@ -75,6 +75,26 @@ public sealed partial class TrackerTests
         var source=await List();var template=await Capture(source.Item,TemplateType.List);before=await TableRows(profile,"WorkspaceItems");
         using var cancellation=new CancellationTokenSource();cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>Templates().InstantiateAsync(TRef(template),token:cancellation.Token));Assert.Equal(before,await TableRows(profile,"WorkspaceItems"));
+    }
+    [Fact]
+    public async Task SearchTemplateNavigationIsConsumedBeforeCatalogFilteringOrDeletion()
+    {
+        var source = await List(); var template = await Capture(source.Item, TemplateType.List);
+        var navigation = new NavigationService(current);
+        navigation.Navigate(new("Templates", template.Metadata.Id.ToString(), new(profile)));
+        var model = new TemplateWorkspaceViewModel(Templates(), current, navigation, NullLogger<TemplateWorkspaceViewModel>.Instance);
+        await model.ReloadAsync();
+        Assert.Equal(template.Metadata.Id, model.Snapshot?.Metadata.Id);
+
+        model.Filter = "Task"; await model.ReloadAsync();
+        Assert.Empty(model.Rows); Assert.Null(model.Selected); Assert.Null(model.Error);
+        model.Filter = "All"; await model.ReloadAsync();
+        Assert.Null(model.Selected); Assert.Null(model.Snapshot); Assert.Null(model.Error);
+        navigation.Navigate(navigation.Current); await model.ReloadAsync();
+        Assert.Equal(template.Metadata.Id, model.Snapshot?.Metadata.Id);
+        await model.DeleteAsync(TRef(template));
+        Assert.Empty(model.Rows); Assert.Null(model.Snapshot); Assert.Null(model.Error);
+        Assert.Equal("Template deleted. Existing instances are unchanged.", model.Notice);
     }
     [Fact]
     public async Task TemplateModelClearsSelectionDraftsSourcesAndPreviewOnProfileChange()

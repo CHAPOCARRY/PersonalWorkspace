@@ -25,7 +25,8 @@ public interface ISettingsService
     Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default);
 }
 
-public sealed record NavigationRoute(string Destination, string? EntityId = null);
+public sealed record NavigationContext(Guid ProfileId, Guid? ChildId = null, bool Archived = false);
+public sealed record NavigationRoute(string Destination, string? EntityId = null, NavigationContext? Context = null);
 
 public interface INavigationService
 {

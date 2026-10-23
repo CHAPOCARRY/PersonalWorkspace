@@ -10,11 +10,17 @@ public sealed partial class MainWindow : Window
 {
     private readonly ShellViewModel viewModel;
     private bool synchronizingSelection;
+    private readonly SearchViewModel search;
+    private Views.SearchDialog? searchDialog;
 
-    public MainWindow(ShellViewModel viewModel, WindowStateController windowState)
+    public MainWindow(ShellViewModel viewModel, WindowStateController windowState, SearchViewModel search)
     {
         this.viewModel = viewModel;
+        this.search = search;
         InitializeComponent();
+        var shortcut = new Microsoft.UI.Xaml.Input.KeyboardAccelerator { Key = Windows.System.VirtualKey.K, Modifiers = Windows.System.VirtualKeyModifiers.Control };
+        shortcut.Invoked += (_, args) => { args.Handled = true; OpenSearch(); };
+        Root.KeyboardAccelerators.Add(shortcut);
         Root.DataContext = viewModel;
         Navigation.SelectedItem = Navigation.MenuItems[0];
         viewModel.PropertyChanged += OnViewModelChanged;
@@ -27,6 +33,17 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => todayTimer.Stop();
         Closed += (_, _) => viewModel.PropertyChanged -= OnViewModelChanged;
         Closed += (_, _) => viewModel.Organization.PropertyChanged -= OnOrganizationChanged;
+    }
+
+    private void OnSearch(object sender, RoutedEventArgs args) => OpenSearch();
+    private async void OpenSearch()
+    {
+        if (searchDialog is not null) { searchDialog.FocusQuery(); return; }
+        if (!viewModel.Profiles.HasCurrent || Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).Any(p => p.Child is not ToolTip)) return;
+        viewModel.Profiles.CloseManagementCommand.Execute(null);
+        searchDialog = new Views.SearchDialog(search) { XamlRoot = Root.XamlRoot, RequestedTheme = Root.RequestedTheme };
+        try { await searchDialog.ShowAsync(); }
+        finally { search.Close(); searchDialog = null; }
     }
 
     private void OnItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
