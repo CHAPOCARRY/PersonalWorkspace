@@ -39,7 +39,15 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         await Owner(c, tx, owner, true, token);
         await Execute(c, tx, "INSERT INTO AssetImports VALUES($id,$path)", token, ("id", job.AssetId), ("path", job.StorageRelativePath)); return true;
     }, token);
-    public Task<AssetAttachment> CompleteImportAsync(WorkspaceContext w, Guid owner, Asset asset, CancellationToken token) => Run(w, true, (c, tx) => CompleteImport(c, tx, owner, asset, token), token);
+    public Task<AssetAttachment> CompleteImportAsync(WorkspaceContext w, Guid owner, Asset asset, CancellationToken token) => Run(w, true, async (c, tx) =>
+    {
+        var result = await CompleteImport(c, tx, owner, asset, token);
+        await SqliteAuditWriter.Append(c, tx, w, [], AssetAudit(result), token); return result;
+    }, token);
+    private static List<AuditEntity> AssetAudit(AssetAttachment a) => [AuditProjection.Entity(AuditEntityType.AssetReference, a.Reference.Id, a.Asset.OriginalFileName, a.Reference.OwnerItemId,
+        fields: [("Asset", a.Asset.Id), ("Bytes", a.Asset.ByteLength), ("MediaType", a.Asset.MediaType)])];
+    private static List<AuditEntity> DocumentAudit(RichTextDocument d, Guid owner) => [AuditProjection.Entity(AuditEntityType.RichText, d.Id, "Rich text", owner,
+        fields: [("Content", AuditProjection.Content(d.Content)), ("Format", d.Format), ("FormatVersion", d.FormatVersion)])];
     internal static async Task<AssetAttachment> CompleteImport(SqliteConnection c, SqliteTransaction tx, Guid owner, Asset asset, CancellationToken token)
     {
         await Owner(c, tx, owner, true, token);
@@ -79,7 +87,11 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         var reference = new AssetReference(Guid.NewGuid(), asset, owner, AssetRole.Attachment, checked((int)(long)(await order.ExecuteScalarAsync(token))!), now);
         await Execute(c, tx, "INSERT INTO AssetReferences VALUES($id,$asset,$owner,0,$sort,$utc)", token, ("id", reference.Id), ("asset", asset), ("owner", owner), ("sort", reference.SortOrder), ("utc", now)); return reference;
     }
-    public Task<AssetReference> LinkAsync(WorkspaceContext w, Guid owner, Guid asset, DateTimeOffset now, CancellationToken token) => Run(w, true, (c, tx) => AssetLink(c, tx, owner, asset, now, token), token);
+    public Task<AssetReference> LinkAsync(WorkspaceContext w, Guid owner, Guid asset, DateTimeOffset now, CancellationToken token) => Run(w, true, async (c, tx) =>
+    {
+        var reference = await AssetLink(c, tx, owner, asset, now, token);
+        await SqliteAuditWriter.Append(c, tx, w, [], AssetAudit(new(reference, (await AssetById(c, tx, asset, token))!)), token, AuditAction.Linked); return reference;
+    }, token);
     public Task<IReadOnlyList<AssetAttachment>> ListAsync(WorkspaceContext w, Guid owner, CancellationToken token) => Run<IReadOnlyList<AssetAttachment>>(w, false, async (c, tx) =>
     {
         await Owner(c, tx, owner, false, token);
@@ -93,7 +105,12 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         using var cmd = Command(c, tx, $"SELECT OwnerItemId FROM {table} WHERE Id=$id", ("id", id)); var owner = await cmd.ExecuteScalarAsync(token);
         if (owner is not string value) throw new ContentValidationException("This reference is no longer available.");
         await Owner(c, tx, Guid.Parse(value), true, token);
-        await Execute(c, tx, $"DELETE FROM {table} WHERE Id=$id", token, ("id", id)); return true;
+        using var identity = Command(c, tx, $"SELECT {(rich ? "DocumentId" : "AssetId")} FROM {table} WHERE Id=$id", ("id", id));
+        var content = Guid.Parse((string)(await identity.ExecuteScalarAsync(token))!);
+        var before = rich ? DocumentAudit((await DocumentById(c, tx, content, token))!, Guid.Parse(value))
+            : AssetAudit(new(new(id, content, Guid.Parse(value), AssetRole.Attachment, 0, default), (await AssetById(c, tx, content, token))!));
+        await Execute(c, tx, $"DELETE FROM {table} WHERE Id=$id", token, ("id", id));
+        await SqliteAuditWriter.Append(c, tx, w, before, [], token, AuditAction.Unlinked); return true;
     }, token);
     public Task RemoveAsync(WorkspaceContext w, Guid reference, CancellationToken token) => Remove(w, reference, false, token);
 
@@ -109,7 +126,11 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         var reference = new RichTextReference(Guid.NewGuid(), document, owner, now);
         await Execute(c, tx, "INSERT INTO RichTextReferences VALUES($id,$document,$owner,$utc)", token, ("id", reference.Id), ("document", document), ("owner", owner), ("utc", now)); return reference;
     }
-    public Task<RichTextAttachment> CreateAsync(WorkspaceContext w, Guid owner, RichTextDocument document, CancellationToken token) => Run(w, true, (c, tx) => CreateDocument(c, tx, owner, document, token), token);
+    public Task<RichTextAttachment> CreateAsync(WorkspaceContext w, Guid owner, RichTextDocument document, CancellationToken token) => Run(w, true, async (c, tx) =>
+    {
+        var result = await CreateDocument(c, tx, owner, document, token);
+        await SqliteAuditWriter.Append(c, tx, w, [], DocumentAudit(document, owner), token); return result;
+    }, token);
     internal static async Task<RichTextAttachment> CreateDocument(SqliteConnection c, SqliteTransaction tx, Guid owner, RichTextDocument document, CancellationToken token)
     {
         await Owner(c, tx, owner, true, token);
@@ -146,7 +167,11 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         return result;
     }
     Task<RichTextDocument?> IRichContentRepository.FindAsync(WorkspaceContext w, Guid document, CancellationToken token) => Run(w, false, (c, tx) => DocumentById(c, tx, document, token), token);
-    Task<RichTextReference> IRichContentRepository.LinkAsync(WorkspaceContext w, Guid owner, Guid document, DateTimeOffset now, CancellationToken token) => Run(w, true, (c, tx) => DocumentLink(c, tx, owner, document, now, token), token);
+    Task<RichTextReference> IRichContentRepository.LinkAsync(WorkspaceContext w, Guid owner, Guid document, DateTimeOffset now, CancellationToken token) => Run(w, true, async (c, tx) =>
+    {
+        var result = await DocumentLink(c, tx, owner, document, now, token);
+        await SqliteAuditWriter.Append(c, tx, w, [], DocumentAudit((await DocumentById(c, tx, document, token))!, owner), token, AuditAction.Linked); return result;
+    }, token);
     Task IRichContentRepository.RemoveAsync(WorkspaceContext w, Guid reference, CancellationToken token) => Remove(w, reference, true, token);
     public Task<RichTextDocument> UpdateAsync(WorkspaceContext w, Guid reference, string content, DateTimeOffset now, CancellationToken token) => Run(w, true, async (c, tx) =>
     {
@@ -157,7 +182,15 @@ public sealed class SqliteContentRepository : IAssetRepository, IRichContentRepo
         await Owner(c, tx, owner, true, token); var old = (await DocumentById(c, tx, id, token))!;
         if (content == old.Content) return old;
         var updated = old with { Content = content, UpdatedAtUtc = now > old.UpdatedAtUtc ? now : old.UpdatedAtUtc.AddTicks(1) };
-        await Execute(c, tx, "UPDATE RichTextDocuments SET Content=$content,UpdatedAtUtc=$utc WHERE Id=$id", token, ("content", content), ("utc", updated.UpdatedAtUtc), ("id", id)); return updated;
+        await Execute(c, tx, "UPDATE RichTextDocuments SET Content=$content,UpdatedAtUtc=$utc WHERE Id=$id", token, ("content", content), ("utc", updated.UpdatedAtUtc), ("id", id));
+        var before = DocumentAudit(old, owner); var after = DocumentAudit(updated, owner);
+        using (var owners = Command(c, tx, "SELECT w.Id,w.ItemType,w.Title FROM RichTextReferences r JOIN WorkspaceItems w ON w.Id=r.OwnerItemId WHERE r.DocumentId=$id", ("id", id)))
+        using (var r = await owners.ExecuteReaderAsync(token)) while (await r.ReadAsync(token))
+        {
+            var context = AuditProjection.Entity((AuditEntityType)r.GetInt32(1), GuidAt(r, 0), r.GetString(2));
+            before.Add(context); after.Add(context);
+        }
+        await SqliteAuditWriter.Append(c, tx, w, before, after, token); return updated;
     }, token);
     Task<IReadOnlyList<RichTextAttachment>> IRichContentRepository.ListAsync(WorkspaceContext w, Guid owner, CancellationToken token) => Run<IReadOnlyList<RichTextAttachment>>(w, false, async (c, tx) =>
     {

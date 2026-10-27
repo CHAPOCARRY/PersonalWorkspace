@@ -55,8 +55,11 @@ public sealed partial class SqliteWidgetRepository : IWidgetRepository
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
         using var transaction = connection.BeginTransaction(deferred: false);
         var before = await Read(connection, transaction, pageId, sourceId, token); var after = change(new(before));
+        var auditBefore = AuditProjection.Widgets(before); auditBefore.AddRange(AuditProjection.Decorations(await SqliteDecorationRepository.Read(connection, transaction, pageId, token)));
         after = await PrepareContent(connection, transaction, pageId, before, after, null, token);
         await Write(connection, transaction, pageId, before, after, token);
+        var auditAfter = AuditProjection.Widgets(after); auditAfter.AddRange(AuditProjection.Decorations(await SqliteDecorationRepository.Read(connection, transaction, pageId, token)));
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, auditAfter, token);
         await transaction.CommitAsync(token); return after;
     }
     internal static async Task Write(SqliteConnection connection, SqliteTransaction transaction, Guid pageId, WidgetPage before, WidgetPage after, CancellationToken token)

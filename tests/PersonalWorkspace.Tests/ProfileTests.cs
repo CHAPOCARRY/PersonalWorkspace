@@ -107,6 +107,11 @@ public sealed class ProfileTests : IAsyncLifetime
             Assert.True(await reader.ReadAsync());
             Assert.Equal(table, reader.GetString(0));
         }
+        foreach (var table in new[] { "AuditHistoryState", "AuditEvents", "sqlite_sequence", "AuditEventTargets", "AuditEventChanges" })
+        {
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(table, reader.GetString(0));
+        }
         Assert.False(await reader.ReadAsync());
     }
 

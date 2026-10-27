@@ -228,8 +228,8 @@ public sealed partial class RecurrenceTests : IAsyncLifetime
             await Sql(migration.Sql+$"INSERT INTO SchemaMigrations VALUES ({migration.Version},'{migration.Name}','original');",legacy);
         var now=clock.GetUtcNow(); var task=new TaskItem(new(Guid.NewGuid(),WorkspaceItemType.Task,"Existing",now,now,null,null),"Details",TaskStatus.Done,TaskPriority.High,Start,Value:new(TaskValueType.Number,20,25));
         var context=new WorkspaceContext(legacy,paths.WorkspaceDatabase(legacy)); var repo=new SqliteTaskRepository();
-        await repo.CreateAsync(context,task,default); await initializer.InitializeAsync(legacy,false); await initializer.InitializeAsync(legacy,false);
-        Assert.Equal(task,await repo.FindAsync(context,task.Item.Id,default)); Assert.Equal(20L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));
+        await LegacyWorkspaceFixture.CreateTask(context,task); await initializer.InitializeAsync(legacy,false); await initializer.InitializeAsync(legacy,false);
+        Assert.Equal(task,await repo.FindAsync(context,task.Item.Id,default)); Assert.Equal(21L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy));
         Assert.Equal(5L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
         Assert.Equal(0L,await Sql("SELECT COUNT(*) FROM TaskOccurrences;",legacy)); Assert.Equal(0L,await Sql("SELECT COUNT(*) FROM TaskRecurrenceRules;",legacy));
         await using var global=await new SqliteConnectionFactory(paths).OpenAsync(); using var command=global.CreateCommand();

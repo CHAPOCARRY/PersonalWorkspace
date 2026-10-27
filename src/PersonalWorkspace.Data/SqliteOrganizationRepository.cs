@@ -30,6 +30,7 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
         var (table, _, _) = Tables(kind);
         await using var connection = await OpenAsync(workspace, cancellationToken);
         using var transaction = connection.BeginTransaction(deferred: false);
+        var auditBefore = await AuditRead(connection, transaction, kind, id, cancellationToken);
         if (!create) now = await NextTimestamp(connection, transaction, table, id, now, cancellationToken);
         using var command = Command(connection, transaction, create
             ? kind == OrganizationKind.Tag
@@ -56,6 +57,7 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
         try { await command.ExecuteNonQueryAsync(cancellationToken); }
         catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == 2067)
         { throw new OrganizationValidationException("This name is already in use."); }
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, await AuditRead(connection, transaction, kind, id, cancellationToken), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -63,9 +65,11 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
     {
         await using var connection = await OpenAsync(workspace, cancellationToken);
         using var transaction = connection.BeginTransaction(deferred: false);
+        var auditBefore = await AuditRead(connection, transaction, OrganizationKind.Tag, id, cancellationToken);
         using var command = Command(connection, transaction, "DELETE FROM Tags WHERE Id = $id;");
         command.Parameters.AddWithValue("$id", id.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken); // Cascades only assignments, never WorkspaceItems.
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, [], cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -73,6 +77,7 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
     {
         await using var connection = await OpenAsync(workspace, cancellationToken);
         using var transaction = connection.BeginTransaction(deferred: false);
+        var auditBefore = await AuditRead(connection, transaction, OrganizationKind.Space, id, cancellationToken);
         now = await NextTimestamp(connection, transaction, "Spaces", id, now, cancellationToken);
         using var command = Command(connection, transaction, """
             UPDATE Spaces SET ArchivedAtUtc = $archived, UpdatedAtUtc = $now WHERE Id = $id
@@ -82,6 +87,7 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
         command.Parameters.AddWithValue("$now", now.ToUniversalTime().ToString("O"));
         command.Parameters.AddWithValue("$archived", archive ? now.ToUniversalTime().ToString("O") : DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, await AuditRead(connection, transaction, OrganizationKind.Space, id, cancellationToken), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -90,6 +96,7 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
         var (table, relationships, column) = Tables(kind);
         await using var connection = await OpenAsync(workspace, cancellationToken);
         using var transaction = connection.BeginTransaction(deferred: false);
+        var auditBefore = await AuditRead(connection, transaction, kind, entityId, cancellationToken);
         using (var item = Command(connection, transaction, "SELECT COUNT(*) FROM WorkspaceItems WHERE Id = $id AND DeletedAtUtc IS NULL;"))
         {
             item.Parameters.AddWithValue("$id", itemId.ToString("D"));
@@ -109,9 +116,31 @@ public sealed class SqliteOrganizationRepository : IOrganizationRepository
         command.Parameters.AddWithValue("$item", itemId.ToString("D"));
         command.Parameters.AddWithValue("$entity", entityId.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, await AuditRead(connection, transaction, kind, entityId, cancellationToken), cancellationToken, assigned ? AuditAction.Linked : AuditAction.Unlinked);
         await transaction.CommitAsync(cancellationToken);
     }
 
+    private static async Task<List<AuditEntity>> AuditRead(SqliteConnection c, SqliteTransaction tx, OrganizationKind kind, Guid id, CancellationToken token)
+    {
+        var (table, relationships, column) = Tables(kind); var result = new List<AuditEntity>();
+        using (var cmd = SqliteAuditWriter.Command(c, tx, kind == OrganizationKind.Tag ? "SELECT Name,Color FROM Tags WHERE Id=$id" : "SELECT Name,Color,Description,Icon,SortOrder,ArchivedAtUtc FROM Spaces WHERE Id=$id", ("id", id)))
+        using (var r = await cmd.ExecuteReaderAsync(token)) if (await r.ReadAsync(token))
+        {
+            var entity = AuditProjection.Entity(kind == OrganizationKind.Tag ? AuditEntityType.Tag : AuditEntityType.Space, id, r.GetString(0), fields: [("Name", r.GetString(0)), ("Color", r.IsDBNull(1) ? null : r.GetInt32(1))]);
+            if (kind == OrganizationKind.Space)
+            { entity.Fields["Description"] = AuditProjection.Content(r.GetString(2)); entity.Fields["Icon"] = AuditProjection.Value(r.GetString(3)); entity.Fields["Order"] = AuditProjection.Value(r.GetInt32(4)); entity.Fields["Archived"] = AuditProjection.Value(!r.IsDBNull(5)); }
+            result.Add(entity);
+        }
+        if (result.Count == 0) return result;
+        using var links = SqliteAuditWriter.Command(c, tx, $"SELECT w.Id,w.ItemType,w.Title FROM {relationships} r JOIN WorkspaceItems w ON w.Id=r.ItemId WHERE r.{column}=$id", ("id", id));
+        using var reader = await links.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+        {
+            var item = Guid.Parse(reader.GetString(0)); result[0].Fields["Assignment:" + item] = AuditProjection.Value(item);
+            result.Add(AuditProjection.Entity((AuditEntityType)reader.GetInt32(1), item, reader.GetString(2)));
+        }
+        return result;
+    }
     // SQL identifiers come only from this closed enum mapping, never names or user input.
     private static (string Table, string Relationships, string Column) Tables(OrganizationKind kind) => kind switch
     {

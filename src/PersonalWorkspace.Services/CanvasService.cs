@@ -18,7 +18,7 @@ public sealed class CanvasService(ICanvasRepository repository, ICurrentProfile 
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != page.ProfileId || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(page.ProfileId, database)); }
+        try { return await action(new WorkspaceContext(page.ProfileId, database) { Audit = AuditOperation.User() }); }
         catch (CanvasValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception) { logger.LogError(exception, "Canvas operation failed in profile {ProfileId}", page.ProfileId); throw new CanvasOperationException("The layout could not be loaded or saved. Check workspace access and try again.", exception); }

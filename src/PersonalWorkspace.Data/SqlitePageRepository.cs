@@ -24,7 +24,14 @@ public sealed class SqlitePageRepository : IPageRepository
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token);
         using var transaction = connection.BeginTransaction(deferred: false); var graph = await Read(connection, transaction, token);
         var before = graph.Pages.ToDictionary(); var result = change(graph);
+        var removed = before.Keys.Except(graph.Pages.Keys).ToArray();
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, removed, token);
+        var auditBefore = AuditProjection.Pages(before.Values); auditBefore.AddRange(consequences.Before);
+        foreach (var id in removed) auditBefore.AddRange(await AuditConsequences.PageContents(connection, transaction, id, token));
         await Write(connection, transaction, before, graph, token);
+        var auditAfter = AuditProjection.Pages(graph.Pages.Values); auditAfter.AddRange(await consequences.After());
+        if (result is PageItem primary) workspace = workspace with { Audit = (workspace.Audit ?? AuditOperation.User()) with { Primary = new(AuditEntityType.Page, primary.Item.Id, primary.Item.Title) } };
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, auditAfter, token);
         await transaction.CommitAsync(token); return result;
     }
     internal static async Task Write(SqliteConnection connection, SqliteTransaction transaction, IReadOnlyDictionary<Guid, PageItem> before, PageGraph graph, CancellationToken token)

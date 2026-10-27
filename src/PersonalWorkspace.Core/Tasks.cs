@@ -17,7 +17,10 @@ public sealed record TaskDraft(string Title, string Description = "", TaskStatus
     TaskPriority Priority = TaskPriority.None, DateOnly? ScheduledDate = null, TaskValue? Value = null);
 // UI actions carry their originating profile so a stale editor can never write to a different workspace.
 public sealed record TaskReference(Guid ProfileId, Guid ItemId);
-public sealed record WorkspaceContext(Guid ProfileId, string DatabasePath);
+public sealed record WorkspaceContext(Guid ProfileId, string DatabasePath)
+{
+    public AuditOperation? Audit { get; init; }
+}
 
 public interface IWorkspaceOperationGate
 {
@@ -50,7 +53,7 @@ public interface ITaskService
     Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(Guid profileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TaskItem>> GetAsync(Guid profileId, TaskCollection collection, CancellationToken cancellationToken = default);
     Task<TaskItem?> FindAsync(TaskReference reference, CancellationToken cancellationToken = default);
-    Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default);
+    Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default, AuditOperation? audit = null);
     Task<TaskItem> UpdateAsync(TaskReference reference, TaskDraft draft, CancellationToken cancellationToken = default);
     Task<TaskItem> ChangeStatusAsync(TaskReference reference, TaskStatus status, CancellationToken cancellationToken = default);
     Task<TaskItem> ScheduleAsync(TaskReference reference, DateOnly? date, CancellationToken cancellationToken = default);

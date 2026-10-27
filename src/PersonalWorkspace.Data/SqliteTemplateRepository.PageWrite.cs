@@ -9,6 +9,7 @@ public sealed partial class SqliteTemplateRepository
         Func<PageBlueprint, IReadOnlyList<Asset>, Task<PageBlueprint>> prepare, CancellationToken token)
     {
         await using var c = await Open(workspace, token); using var tx = c.BeginTransaction(deferred: false);
+        var auditBefore = create ? [] : AuditProjection.Template(await Read(c, tx, metadata.Id, token));
         var blueprint = await prepare(await CapturePage(c, tx, source, token), await PageAssets(c, tx, source, false, token));
         if (metadata.Type != TemplateType.Page || metadata.FormatVersion != 1) throw new TemplateValidationException("Choose a Page template.");
         if (create) await Execute(c, tx, "INSERT INTO Templates VALUES($p0,4,$p1,$p2,1,$p3,$p4)", token, metadata.Id, metadata.Name, metadata.Description, metadata.CreatedAtUtc, metadata.UpdatedAtUtc);
@@ -18,7 +19,10 @@ public sealed partial class SqliteTemplateRepository
             if (await cmd.ExecuteNonQueryAsync(token) != 1) throw new TemplateValidationException("This Page template is no longer available.");
         }
         await WritePage(c, tx, metadata, blueprint, token);
-        var result = await Read(c, tx, metadata.Id, token); await tx.CommitAsync(token); return result;
+        var result = await Read(c, tx, metadata.Id, token);
+        var context = workspace with { Audit = (workspace.Audit ?? AuditOperation.User()) with { Source = new(AuditEntityType.Page, source, blueprint.Title) } };
+        await SqliteAuditWriter.Append(c, tx, context, auditBefore, AuditProjection.Template(result), token, create ? AuditAction.TemplateCaptured : AuditAction.TemplateUpdated);
+        await tx.CommitAsync(token); return result;
     }
     private static async Task WritePage(SqliteConnection c, SqliteTransaction tx, TemplateMetadata metadata, PageBlueprint page, CancellationToken token)
     {
@@ -88,6 +92,11 @@ public sealed partial class SqliteTemplateRepository
         var canvas = blueprint.Canvas with { Items = blueprint.Canvas.Items.OrderByDescending(i => i.Kind).ToArray() };
         await SqliteWidgetRepository.Write(c, tx, page, new(empty, [], []), new(canvas, widgets, []), token);
         await SqliteDecorationRepository.Write(c, tx, page, new(canvas, []), new(canvas, blueprint.Decorations), token);
+        var auditContext = workspace with { Audit = (workspace.Audit ?? AuditOperation.User()) with { Action = AuditAction.TemplateInstantiated, Primary = new(AuditEntityType.Page, page, instance.Page.Item.Title), Source = new(AuditEntityType.Template, template, snapshot.Metadata.Name) } };
+        var auditAfter = AuditProjection.Pages([instance.Page]);
+        auditAfter.AddRange(AuditProjection.Widgets(new(canvas, widgets, [])));
+        auditAfter.AddRange(AuditProjection.Decorations(new(canvas, blueprint.Decorations)));
+        await SqliteAuditWriter.Append(c, tx, auditContext, [], auditAfter, token, AuditAction.TemplateInstantiated);
         await tx.CommitAsync(token); return instance.Page.Item;
     }
 }

@@ -53,7 +53,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         await initializer.InitializeAsync(profileId, false);
         await initializer.InitializeAsync(profileId, false);
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE Version = 1;"));
-        Assert.Equal(68L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
+        Assert.Equal(73L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table';"));
         Assert.Equal(task, await tasks.FindAsync(Ref(task)));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();
         using var command = global.CreateCommand();
@@ -81,7 +81,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         check.CommandText = "SELECT COUNT(*) FROM Tasks;";
         Assert.Equal(0L, await check.ExecuteScalarAsync());
         check.CommandText = "SELECT COUNT(*) FROM SchemaMigrations;";
-        Assert.Equal(20L, await check.ExecuteScalarAsync());
+        Assert.Equal(21L, await check.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -408,7 +408,7 @@ public sealed class TaskCoreTests : IAsyncLifetime
         public Task<IReadOnlyList<TaskItem>> GetScheduledAsync(Guid profileId, DateOnly from, DateOnly through, CancellationToken cancellationToken = default) => inner.GetScheduledAsync(profileId, from, through, cancellationToken);
         public Task<IReadOnlyList<TaskItem>> GetUnscheduledAsync(Guid profileId, CancellationToken cancellationToken = default) => inner.GetUnscheduledAsync(profileId, cancellationToken);
         public Task<TaskItem?> FindAsync(TaskReference reference, CancellationToken cancellationToken = default) => inner.FindAsync(reference, cancellationToken);
-        public Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default) => inner.CreateAsync(profileId, draft, cancellationToken);
+        public Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default, AuditOperation? audit = null) => inner.CreateAsync(profileId, draft, cancellationToken, audit);
         public Task<TaskItem> UpdateAsync(TaskReference reference, TaskDraft draft, CancellationToken cancellationToken = default) => inner.UpdateAsync(reference, draft, cancellationToken);
         public Task<TaskItem> ChangeStatusAsync(TaskReference reference, TaskStatus status, CancellationToken cancellationToken = default) => inner.ChangeStatusAsync(reference, status, cancellationToken);
         public Task<TaskItem> ScheduleAsync(TaskReference reference, DateOnly? date, CancellationToken cancellationToken = default) => inner.ScheduleAsync(reference, date, cancellationToken);

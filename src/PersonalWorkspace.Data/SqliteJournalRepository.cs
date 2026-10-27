@@ -55,7 +55,9 @@ public sealed class SqliteJournalRepository : IJournalRepository
     public async Task CreateAsync(WorkspaceContext workspace, JournalDefinition definition, CancellationToken token)
     {
         await using var connection = await Open(workspace, token); using var transaction = connection.BeginTransaction(deferred: false);
-        await WriteDefinition(connection, transaction, definition, null, token); await transaction.CommitAsync(token);
+        await WriteDefinition(connection, transaction, definition, null, token);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [], AuditProjection.Journal(definition), token);
+        await transaction.CommitAsync(token);
     }
     public async Task<T> TransactAsync<T>(WorkspaceContext workspace, Guid id, DateOnly? date, Func<JournalState, T> change, CancellationToken token)
     {
@@ -66,13 +68,17 @@ public sealed class SqliteJournalRepository : IJournalRepository
         if (state.Definition.Item.Id != id || state.Definition.Item.ItemType != WorkspaceItemType.Journal) throw new InvalidOperationException("Journal identity cannot change.");
         if (state.Definition != original) await WriteDefinition(connection, transaction, state.Definition, original, token);
         if (date is not null && state.Entry != before) await WriteEntry(connection, transaction, state.Definition, state.Entry, before, date.Value, token);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, AuditProjection.Journal(original, before), AuditProjection.Journal(state.Definition, state.Entry), token);
         await transaction.CommitAsync(token); return result;
     }
     public async Task DeleteAsync(WorkspaceContext workspace, Guid id, CancellationToken token)
     {
         await using var connection = await Open(workspace, token); using var transaction = connection.BeginTransaction(deferred: false);
+        var before = (await Read(connection, transaction, id, JournalCollection.Trash, null, null, token)).Journals.Single();
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, [id], token);
         using var command = Command(connection, transaction, "DELETE FROM WorkspaceItems WHERE Id=$id AND ItemType=4 AND DeletedAtUtc IS NOT NULL;"); Add(command, "$id", id);
         if (await command.ExecuteNonQueryAsync(token) != 1) throw new JournalValidationException("Move the Journal to Trash before permanently deleting it.");
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [.. AuditProjection.Journal(before), .. consequences.Before], await consequences.After(), token);
         await transaction.CommitAsync(token);
     }
     private static async Task WriteDefinition(SqliteConnection connection, SqliteTransaction transaction, JournalDefinition item, JournalDefinition? before, CancellationToken token)

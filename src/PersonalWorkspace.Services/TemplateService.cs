@@ -24,7 +24,7 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
         return await Run(source.ProfileId, async w =>
         {
             var now = clock.GetUtcNow(); var snapshot = new TemplateSnapshot(new(Guid.NewGuid(), type, name, description, 1, now, now), blueprint);
-            await repository.SaveAsync(w, snapshot, true, token); return await repository.ReadAsync(w, snapshot.Metadata.Id, token);
+            await repository.SaveAsync(w with { Audit = (w.Audit ?? AuditOperation.User()) with { Source = new((AuditEntityType)(type == TemplateType.Task ? WorkspaceItemType.Task : type == TemplateType.List ? WorkspaceItemType.List : WorkspaceItemType.Journal), source.ItemId, blueprint.Title) } }, snapshot, true, token); return await repository.ReadAsync(w, snapshot.Metadata.Id, token);
         }, token);
     }
     public async Task<TemplateSnapshot> ReplaceAsync(TemplateReference template, WorkspaceItemReference source, CancellationToken token = default)
@@ -43,7 +43,7 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
             // Recheck after the source read; concurrent metadata edits must not be overwritten.
             var latest = await repository.ReadAsync(w, template.Id, token);
             var snapshot = new TemplateSnapshot(latest.Metadata with { UpdatedAtUtc = Next(latest.Metadata.UpdatedAtUtc) }, blueprint);
-            await repository.SaveAsync(w, snapshot, false, token); return await repository.ReadAsync(w, snapshot.Metadata.Id, token);
+            await repository.SaveAsync(w with { Audit = (w.Audit ?? AuditOperation.User()) with { Source = new((AuditEntityType)(old.Metadata.Type == TemplateType.Task ? WorkspaceItemType.Task : old.Metadata.Type == TemplateType.List ? WorkspaceItemType.List : WorkspaceItemType.Journal), source.ItemId, blueprint.Title) } }, snapshot, false, token); return await repository.ReadAsync(w, snapshot.Metadata.Id, token);
         }, token);
     }
     public Task RenameAsync(TemplateReference template, string name, string? description, CancellationToken token = default) => Run(template.ProfileId, async w =>
@@ -67,13 +67,14 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
         var snapshot = await ReadAsync(template, token);
         if (snapshot.Metadata.Type == TemplateType.Page) return await InstantiatePageAsync(template, title, null, token);
         title = string.IsNullOrWhiteSpace(title) ? snapshot.Blueprint.Title : title.Trim();
+        var audit = AuditOperation.User(AuditAction.TemplateInstantiated, source: new(AuditEntityType.Template, template.Id, snapshot.Metadata.Name));
         // Release the read lease before entering a canonical service. Each service rechecks the originating Profile
         // and atomically writes the complete new entity. The captured blueprint never depends on its source.
         return snapshot.Blueprint switch
         {
-            TaskBlueprint task => (await tasks.CreateAsync(template.ProfileId, task.Definition with { Title = title }, token)).Item,
-            ListBlueprint list => (await lists.CreateDefinitionAsync(template.ProfileId, list.Definition with { Title = title }, list.Items, token)).Item,
-            JournalBlueprint journal => (await journals.CreateDefinitionAsync(template.ProfileId, title, journal.Description, journal.Fields, token)).Item,
+            TaskBlueprint task => (await tasks.CreateAsync(template.ProfileId, task.Definition with { Title = title }, token, audit)).Item,
+            ListBlueprint list => (await lists.CreateDefinitionAsync(template.ProfileId, list.Definition with { Title = title }, list.Items, token, audit)).Item,
+            JournalBlueprint journal => (await journals.CreateDefinitionAsync(template.ProfileId, title, journal.Description, journal.Fields, token, audit)).Item,
             _ => throw new TemplateValidationException("This template type is not supported.")
         };
     }
@@ -104,7 +105,7 @@ public sealed class TemplateService(ITemplateRepository repository, ITaskService
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } path) throw new WorkspaceChangedException();
-        try { return await action(new(profile, path)); }
+        try { return await action(new WorkspaceContext(profile, path) { Audit = AuditOperation.User() }); }
         catch (TemplateValidationException) { throw; }
         catch (Exception e) when (e is PageValidationException or CanvasValidationException or WidgetValidationException or DecorationValidationException or ContentValidationException) { throw new TemplateValidationException(e.Message); }
         catch (OperationCanceledException) { throw; }

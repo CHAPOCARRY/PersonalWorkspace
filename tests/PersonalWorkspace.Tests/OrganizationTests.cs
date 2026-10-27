@@ -62,11 +62,11 @@ public sealed class OrganizationTests : IAsyncLifetime
         var task = new TaskItem(new(Guid.NewGuid(), WorkspaceItemType.Task, "Existing", now, now, null, null), "Retained", TaskStatus.Blocked, TaskPriority.High, new DateOnly(2026, 9, 23));
         var context = new WorkspaceContext(legacyId, paths.WorkspaceDatabase(legacyId));
         var repository = new SqliteTaskRepository();
-        await repository.CreateAsync(context, task, default);
+        await LegacyWorkspaceFixture.CreateTask(context, task);
         await initializer.InitializeAsync(legacyId, false);
         await initializer.InitializeAsync(legacyId, false);
         Assert.Equal(task, await repository.FindAsync(context, task.Item.Id, default));
-        Assert.Equal(20L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacyId));
+        Assert.Equal(21L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacyId));
         Assert.Equal("2026-09-01T00:00:00.0000000+00:00", await Scalar("SELECT AppliedAtUtc FROM SchemaMigrations WHERE Version=1;", legacyId));
         Assert.Equal(4L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('Tags','Spaces','ItemTags','ItemSpaces');", legacyId));
         await using var global = await new SqliteConnectionFactory(paths).OpenAsync();

@@ -14,6 +14,7 @@ public sealed class SqliteDecorationRepository : IDecorationRepository
         using var tx = c.BeginTransaction(deferred: change is null);
         var before = await Read(c, tx, page, token); var after = change?.Invoke(before) ?? before;
         if (change is not null) await Write(c, tx, page, before, after, token);
+        if (change is not null) await SqliteAuditWriter.Append(c, tx, w, AuditProjection.Decorations(before), AuditProjection.Decorations(after), token);
         await tx.CommitAsync(token); return after;
     }
     internal static async Task Write(SqliteConnection c, SqliteTransaction tx, Guid page, DecorationSnapshot before, DecorationSnapshot after, CancellationToken token)

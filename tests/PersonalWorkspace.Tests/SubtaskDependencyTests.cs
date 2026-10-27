@@ -60,11 +60,11 @@ public sealed class SubtaskDependencyTests : IAsyncLifetime
         var context = new WorkspaceContext(legacy, paths.WorkspaceDatabase(legacy));
         var now = DateTimeOffset.UtcNow;
         var oldTask = new TaskItem(new(Guid.NewGuid(), WorkspaceItemType.Task, "Existing", now, now, null, null), "Details", TaskStatus.Doing, TaskPriority.High, new(2026,9,26));
-        await new SqliteTaskRepository().CreateAsync(context, oldTask, default);
+        await LegacyWorkspaceFixture.CreateTask(context, oldTask);
         var oldEvent = new EventItem(new(Guid.NewGuid(), WorkspaceItemType.Event, "Holiday", now, now, null, null), true, new(2026,9,26), null, new(2026,9,28), null);
-        await new SqliteEventRepository().CreateAsync(context, oldEvent, default);
+        await LegacyWorkspaceFixture.CreateEvent(context, oldEvent);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(20L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(21L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(3L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(oldTask, await new SqliteTaskRepository().FindAsync(context, oldTask.Item.Id, default));
         Assert.Equal(oldEvent, await new SqliteEventRepository().FindAsync(context, oldEvent.Item.Id, default));

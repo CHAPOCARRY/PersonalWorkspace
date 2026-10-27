@@ -68,10 +68,10 @@ public sealed class TaskValueTests : IAsyncLifetime
         var context = new WorkspaceContext(legacy, paths.WorkspaceDatabase(legacy)); var now = DateTimeOffset.UtcNow;
         var parent = new TaskItem(new(Guid.NewGuid(), WorkspaceItemType.Task, "Parent", now, now, null, null), "", TaskStatus.Doing, TaskPriority.High, new(2026,9,26));
         var child = new TaskItem(new(Guid.NewGuid(), WorkspaceItemType.Task, "Child", now, now, null, null), "", TaskStatus.ToDo, TaskPriority.None, null, parent.Item.Id);
-        var repo = new SqliteTaskRepository(); await repo.CreateAsync(context, parent, default); await repo.CreateAsync(context, child, default);
+        var repo = new SqliteTaskRepository(); await LegacyWorkspaceFixture.CreateTask(context, parent); await LegacyWorkspaceFixture.CreateTask(context, child);
         await Sql($"INSERT INTO TaskDependencies VALUES ('{parent.Item.Id:D}','{child.Item.Id:D}','{now:O}');", legacy);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(20L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(21L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(4L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(parent, await repo.FindAsync(context, parent.Item.Id, default));
         Assert.Equal(child, await repo.FindAsync(context, child.Item.Id, default));

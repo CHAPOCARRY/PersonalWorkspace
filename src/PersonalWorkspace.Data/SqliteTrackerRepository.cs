@@ -42,6 +42,7 @@ public sealed partial class SqliteTrackerRepository : ITrackerRepository, ITrack
         await using var connection = await Open(workspace, cancellationToken);
         using var transaction = connection.BeginTransaction(deferred: false);
         await WriteItem(connection, transaction, item, true, cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [], AuditProjection.Tracker(item), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
     public async Task<IReadOnlyList<TrackerEntry>> GetEntriesAsync(WorkspaceContext workspace, Guid id, TrackerEntryQuery query, CancellationToken cancellationToken)
@@ -91,6 +92,7 @@ public sealed partial class SqliteTrackerRepository : ITrackerRepository, ITrack
             if (entry.TrackerId != id) throw new InvalidOperationException("Entry ownership cannot change.");
             if (original.GetValueOrDefault(entry.Id) != entry) await WriteEntry(connection, transaction, state.Item, entry, cancellationToken);
         }
+        await SqliteAuditWriter.Append(connection, transaction, workspace, AuditProjection.Tracker(item, entries), AuditProjection.Tracker(state.Item, state.Entries.Values), cancellationToken);
         await transaction.CommitAsync(cancellationToken); return result;
     }
     public async Task PermanentlyDeleteAsync(WorkspaceContext workspace, Guid id, CancellationToken cancellationToken)
@@ -99,9 +101,12 @@ public sealed partial class SqliteTrackerRepository : ITrackerRepository, ITrack
         using var transaction = connection.BeginTransaction(deferred: false);
         var item = await Find(connection, transaction, id, cancellationToken) ?? throw new TrackerValidationException("This Tracker is no longer available.");
         if (item.Item.DeletedAtUtc is null) throw new TrackerValidationException("Move the Tracker to Trash before permanently deleting it.");
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, [id], cancellationToken);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "DELETE FROM WorkspaceItems WHERE Id=$id AND ItemType=3;"; Add(command, "$id", id);
-        await command.ExecuteNonQueryAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [.. AuditProjection.Tracker(item), .. consequences.Before], await consequences.After(), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
     private static async Task WriteItem(SqliteConnection connection, SqliteTransaction transaction, TrackerItem item, bool create, CancellationToken token)
     {

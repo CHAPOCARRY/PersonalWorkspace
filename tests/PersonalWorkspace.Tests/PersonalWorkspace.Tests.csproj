@@ -2,6 +2,7 @@
   <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/SearchViewModel.cs" Link="Presentation/SearchViewModel.cs" />
+    <Compile Include="../../src/PersonalWorkspace.App/ViewModels/ActivityHistoryViewModel.cs" Link="Presentation/ActivityHistoryViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/TemplateWorkspaceViewModel.cs" Link="Presentation/TemplateWorkspaceViewModel.cs" />
     <Compile Include="../../src/PersonalWorkspace.App/ViewModels/ListWorkspaceViewModel.cs" Link="Presentation/ListWorkspaceViewModel.cs" />
     <ProjectReference Include="../../src/PersonalWorkspace.Data/PersonalWorkspace.Data.csproj" />

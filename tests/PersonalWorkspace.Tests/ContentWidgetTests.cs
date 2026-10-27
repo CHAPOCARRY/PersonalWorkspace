@@ -43,16 +43,16 @@ public sealed partial class TrackerTests
         }
         await Sql("UPDATE WidgetInstances SET SourceItemId=NULL WHERE WidgetType=0;", legacy);
         var repository = new SqliteContentRepository(); var context = new WorkspaceContext(legacy, paths.WorkspaceDatabase(legacy));
-        var doc = await repository.CreateAsync(context, page, new(Guid.NewGuid(), "**Keep**", "markdown-subset", 1, clock.GetUtcNow(), clock.GetUtcNow()), default);
+        var doc = await LegacyWorkspaceFixture.CreateDocument(context, page, new(Guid.NewGuid(), "**Keep**", "markdown-subset", 1, clock.GetUtcNow(), clock.GetUtcNow()));
         var id = Guid.NewGuid(); var relative = AssetPaths.Relative(id, "notes.txt");
         await repository.BeginImportAsync(context, page, new(id, relative), default);
         var physical = new AssetPaths(paths).Resolve(legacy, relative); Directory.CreateDirectory(Path.GetDirectoryName(physical)!); await File.WriteAllTextAsync(physical, "Keep");
-        await repository.CompleteImportAsync(context, page, new(id, relative, "notes.txt", "text/plain", 4, new string('A',64), clock.GetUtcNow()), default);
+        await LegacyWorkspaceFixture.CompleteImport(context, page, new(id, relative, "notes.txt", "text/plain", 4, new string('A',64), clock.GetUtcNow()));
         string[] tables = ["WorkspaceItems","Pages","PageCanvasItems","PageCanvasSettings","WidgetInstances","WidgetChartSettings","WidgetListSettings","Assets","AssetReferences","RichTextDocuments","RichTextReferences"];
         var snapshots = new Dictionary<string,string>(); foreach (var table in tables) snapshots[table] = await TableRows(legacy, table);
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
         foreach (var table in tables) Assert.Equal(snapshots[table], await TableRows(legacy, table));
-        Assert.Equal("Keep", await File.ReadAllTextAsync(physical)); Assert.Equal(20L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal("Keep", await File.ReadAllTextAsync(physical)); Assert.Equal(21L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(15L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Null(await Sql("PRAGMA foreign_key_check;", legacy));
     }

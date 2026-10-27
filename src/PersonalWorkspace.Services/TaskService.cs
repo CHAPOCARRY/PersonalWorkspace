@@ -36,7 +36,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
             if (parentId is { } id) RequireEditable(Find(graph, id));
             graph.Tasks[task.ItemId] = Stamp(existing, existing with { ParentTaskId = parentId });
             Recalculate(graph);
-            return true;
+            return graph.Tasks[task.ItemId];
         }, cancellationToken);
 
     public Task AddDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default) =>
@@ -50,7 +50,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
                 throw new TaskValidationException("Reopen this task before adding an incomplete dependency.");
             graph.Dependencies.Add(new(task.ItemId, dependencyId, time.GetUtcNow()));
             Recalculate(graph);
-            return true;
+            return graph.Tasks[task.ItemId];
         }, cancellationToken);
 
     public Task RemoveDependencyAsync(TaskReference task, Guid dependencyId, CancellationToken cancellationToken = default) =>
@@ -59,7 +59,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
             RequireEditable(Find(graph, task.ItemId));
             graph.Dependencies.RemoveAll(d => d.TaskId == task.ItemId && d.DependsOnTaskId == dependencyId);
             Recalculate(graph);
-            return true;
+            return graph.Tasks[task.ItemId];
         }, cancellationToken);
 
     private Task<T> GraphChangeAsync<T>(Guid profile, Func<TaskGraph, T> change, CancellationToken cancellationToken) =>
@@ -106,7 +106,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
     public Task<TaskItem?> FindAsync(TaskReference reference, CancellationToken cancellationToken = default) =>
         RunAsync(reference.ProfileId, workspace => repository.FindAsync(workspace, reference.ItemId, cancellationToken), cancellationToken);
 
-    public Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default) =>
+    public Task<TaskItem> CreateAsync(Guid profileId, TaskDraft draft, CancellationToken cancellationToken = default, AuditOperation? audit = null) =>
         RunAsync(profileId, async workspace =>
         {
             var task = NewTask(Validate(draft));
@@ -115,7 +115,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
                 if (task.Status == TaskStatus.Done && !value.IsReached) throw new TaskValidationException("Record an actual that reaches the target before marking this task Done.");
                 if (value.IsReached) task = task with { Status = TaskStatus.Done };
             }
-            await repository.CreateAsync(workspace, task, cancellationToken);
+            await repository.CreateAsync(workspace with { Audit = audit ?? workspace.Audit }, task, cancellationToken);
             return task;
         }, cancellationToken);
 
@@ -266,7 +266,7 @@ public sealed class TaskService(ITaskRepository repository, ICurrentProfile curr
         using var lease = await gate.EnterAsync(cancellationToken);
         if (current.Current?.Id != expectedProfileId || current.WorkspaceDatabase is not { } database)
             throw new WorkspaceChangedException();
-        try { return await operation(new WorkspaceContext(expectedProfileId, database)); }
+        try { return await operation(new WorkspaceContext(expectedProfileId, database) { Audit = AuditOperation.User() }); }
         catch (TaskValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)

@@ -18,6 +18,7 @@ public sealed partial class SqliteWidgetRepository
         var attachment = await SqliteContentRepository.CompleteImport(c, tx, page, asset, token);
         after = await PrepareContent(c, tx, page, before, after, attachment, token);
         await Write(c, tx, page, before, after, token);
+        await SqliteAuditWriter.Append(c, tx, workspace, AuditProjection.Widgets(before), AuditProjection.Widgets(after), token);
         await tx.CommitAsync(token); return (after, attachment);
     }
     private static async Task<WidgetPage> PrepareContent(SqliteConnection c, SqliteTransaction tx, Guid page, WidgetPage before, WidgetPage after, AssetAttachment? imported, CancellationToken token)

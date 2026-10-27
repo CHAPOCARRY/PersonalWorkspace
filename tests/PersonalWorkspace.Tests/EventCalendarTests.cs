@@ -90,12 +90,11 @@ public sealed class EventCalendarTests : IAsyncLifetime
         var context = new WorkspaceContext(legacy, paths.WorkspaceDatabase(legacy));
         var item = new TaskItem(new(Guid.NewGuid(), WorkspaceItemType.Task, "Existing task", clock.GetUtcNow(), clock.GetUtcNow(), null, null), "Details", TaskStatus.Doing, TaskPriority.High, Date);
         var taskRepository = new SqliteTaskRepository();
-        await taskRepository.CreateAsync(context, item, default);
+        await LegacyWorkspaceFixture.CreateTask(context, item);
         var tag = Guid.NewGuid(); var org = new SqliteOrganizationRepository();
-        await org.SaveAsync(context, OrganizationKind.Tag, tag, new("health"), true, clock.GetUtcNow(), default);
-        await org.AssignAsync(context, item.Item.Id, OrganizationKind.Tag, tag, true, default);
+        await LegacyWorkspaceFixture.CreateTagAssignment(context, tag, item.Item.Id, clock.GetUtcNow());
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(20L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(21L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(2L, await Scalar("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(1L, await Scalar("SELECT COUNT(*) FROM sqlite_master WHERE name='Events';", legacy));
         Assert.Equal(item, await taskRepository.FindAsync(context, item.Item.Id, default));
