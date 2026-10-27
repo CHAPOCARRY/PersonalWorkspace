@@ -18,7 +18,7 @@ public sealed class ListService(IListRepository repository, ITaskService tasks, 
         return repository.GetItemsAsync(w, list.ItemId, query, token);
     }, token);
     public Task<ListDefinition> CreateAsync(Guid profile, ListDraft draft, CancellationToken token = default) => CreateDefinitionAsync(profile, draft, [], token);
-    public Task<ListDefinition> CreateDefinitionAsync(Guid profile, ListDraft draft, IReadOnlyList<ListItemDraft> items, CancellationToken token = default) => Change(profile, null, state =>
+    public Task<ListDefinition> CreateDefinitionAsync(Guid profile, ListDraft draft, IReadOnlyList<ListItemDraft> items, CancellationToken token = default, AuditOperation? audit = null) => Change(profile, null, state =>
     {
         var valid = ListRules.Validate(draft); var now = clock.GetUtcNow();
         var list = new ListDefinition(new(Guid.NewGuid(), WorkspaceItemType.List, valid.Title, now, now, null, null), valid.Description, valid.ShowQuantity, valid.ShowPrices, valid.CurrencyCode);
@@ -30,7 +30,7 @@ public sealed class ListService(IListRepository repository, ITaskService tasks, 
             state.Items.Add(item.Id, item);
         }
         CheckTotals(state, list.Item.Id); return list;
-    }, token);
+    }, token, audit);
     public Task<ListDefinition> UpdateAsync(WorkspaceItemReference list, ListDraft draft, CancellationToken token = default) => Change(list.ProfileId, list.ItemId, state =>
     {
         var old = Active(state.Find(list.ItemId)); var valid = ListRules.Validate(draft);
@@ -74,7 +74,8 @@ public sealed class ListService(IListRepository repository, ITaskService tasks, 
             var snapshot = await repository.ReadAsync(w, item.ListId, token); Active(snapshot.Definition);
             return snapshot.Items.SingleOrDefault(i => i.Id == item.ItemId) ?? throw new ListValidationException("This item is no longer available in this List.");
         }, token);
-        return await tasks.CreateAsync(item.ProfileId, new(source.Title, source.Note ?? ""), token);
+        return await tasks.CreateAsync(item.ProfileId, new(source.Title, source.Note ?? ""), token,
+            AuditOperation.User(source: new(AuditEntityType.ListItem, source.Id, source.Title, source.ListId)));
     }
     public Task<ListDefinition> DuplicateAsync(WorkspaceItemReference list, CancellationToken token = default) => Change(list.ProfileId, list.ItemId, state =>
     {
@@ -118,12 +119,12 @@ public sealed class ListService(IListRepository repository, ITaskService tasks, 
         state.Lists[list.Item.Id] = list = list with { Item = list.Item with { UpdatedAtUtc = Updated(old.Item.UpdatedAtUtc) } }; return list;
     }
     private Task<T> ItemChange<T>(ListItemReference item, Func<ListState, ListItem, T> action, CancellationToken token) => Change(item.ProfileId, item.ListId, state => { Active(state.Find(item.ListId)); return action(state, state.FindItem(item.ListId, item.ItemId)); }, token);
-    private Task<T> Change<T>(Guid profile, Guid? id, Func<ListState, T> change, CancellationToken token) => Run(profile, w => repository.TransactAsync(w, id, change, token), token);
+    private Task<T> Change<T>(Guid profile, Guid? id, Func<ListState, T> change, CancellationToken token, AuditOperation? audit = null) => Run(profile, w => repository.TransactAsync(w with { Audit = audit ?? w.Audit }, id, change, token), token);
     private async Task<T> Run<T>(Guid profile, Func<WorkspaceContext, Task<T>> action, CancellationToken token)
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profile, database)); }
+        try { return await action(new WorkspaceContext(profile, database) { Audit = AuditOperation.User() }); }
         catch (ListValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception) { logger.LogError(exception, "List operation failed in profile {ProfileId}", profile); throw new ListOperationException("The List could not be loaded or saved. Check access to the workspace and try again.", exception); }

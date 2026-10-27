@@ -51,7 +51,7 @@ public sealed class OrganizationService(IOrganizationRepository repository, ICur
     {
         using var lease = await gate.EnterAsync(cancellationToken);
         if (current.Current?.Id != expectedProfile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await operation(new(expectedProfile, database)); }
+        try { return await operation(new WorkspaceContext(expectedProfile, database) { Audit = AuditOperation.User() }); }
         catch (OrganizationValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)

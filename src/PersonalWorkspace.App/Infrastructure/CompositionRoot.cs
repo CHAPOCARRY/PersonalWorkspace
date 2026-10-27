@@ -23,6 +23,9 @@ internal static class CompositionRoot
         services.AddSingleton<ISearchRepository, SqliteSearchRepository>();
         services.AddSingleton<ISearchService, SearchService>();
         services.AddSingleton<SearchViewModel>();
+        services.AddSingleton<IActivityHistoryRepository, SqliteActivityHistoryRepository>();
+        services.AddSingleton<IActivityHistoryService, ActivityHistoryService>();
+        services.AddSingleton<ActivityHistoryViewModel>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<AssetPaths>();
         services.AddSingleton<IAssetFileStore, AssetFileStore>();

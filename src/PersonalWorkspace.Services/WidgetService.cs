@@ -40,7 +40,7 @@ public sealed class WidgetService(IWidgetRepository repository, ICurrentProfile 
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != page.ProfileId || current.WorkspaceDatabase is not { } path) throw new WorkspaceChangedException();
-        try { return await action(new(page.ProfileId, path)); }
+        try { return await action(new WorkspaceContext(page.ProfileId, path) { Audit = AuditOperation.User() }); }
         catch (Exception e) when (e is WidgetValidationException or CanvasValidationException or ContentValidationException or OperationCanceledException) { throw; }
         catch (Exception e) { logger.LogError(e, "Widget operation failed in profile {ProfileId}", page.ProfileId); throw new WidgetOperationException("The Widget could not be loaded or saved. Please try again.", e); }
     }

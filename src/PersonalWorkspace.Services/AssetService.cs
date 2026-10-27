@@ -97,7 +97,7 @@ public sealed class AssetService(IAssetRepository repository, IAssetFileStore fi
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profile, database)); }
+        try { return await action(new WorkspaceContext(profile, database) { Audit = AuditOperation.User() }); }
         catch (ContentValidationException) { throw; }
         catch (ContentOperationException) { throw; }
         catch (OperationCanceledException) { throw; }

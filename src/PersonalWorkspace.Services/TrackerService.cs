@@ -150,7 +150,7 @@ public sealed class TrackerService(ITrackerRepository repository, ICurrentProfil
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profileId || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profileId, database)); }
+        try { return await action(new WorkspaceContext(profileId, database) { Audit = AuditOperation.User() }); }
         catch (TrackerValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)

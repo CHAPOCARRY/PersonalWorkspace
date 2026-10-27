@@ -91,6 +91,7 @@ public sealed partial class SqliteTemplateRepository : ITemplateRepository, IPag
     public async Task SaveAsync(WorkspaceContext workspace, TemplateSnapshot snapshot, bool create, CancellationToken token)
     {
         await using var c = await Open(workspace, token); using var tx = c.BeginTransaction(deferred: false); var m = snapshot.Metadata;
+        var auditBefore = create ? [] : AuditProjection.Template(await Read(c, tx, m.Id, token));
         if (create) await Execute(c, tx, "INSERT INTO Templates VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6)", token, m.Id, m.Type, m.Name, m.Description, m.FormatVersion, m.CreatedAtUtc, m.UpdatedAtUtc);
         else
         {
@@ -128,6 +129,7 @@ public sealed partial class SqliteTemplateRepository : ITemplateRepository, IPag
                 break;
             default: throw new TemplateValidationException("This template type is not supported.");
         }
+        await SqliteAuditWriter.Append(c, tx, workspace, auditBefore, AuditProjection.Template(snapshot), token, create ? AuditAction.TemplateCaptured : AuditAction.TemplateUpdated);
         await tx.CommitAsync(token);
     }
     private static void Set(SqliteCommand cmd, params object?[] values)
@@ -135,9 +137,20 @@ public sealed partial class SqliteTemplateRepository : ITemplateRepository, IPag
     public async Task RenameAsync(WorkspaceContext workspace, Guid id, string name, string? description, DateTimeOffset now, CancellationToken token)
     {
         await using var c = await Open(workspace, token); using var tx = c.BeginTransaction(deferred: false);
+        var before = await Read(c, tx, id, token);
         using var cmd = Command(c, tx, "UPDATE Templates SET Name=$p0,Description=$p1,UpdatedAtUtc=$p2 WHERE Id=$p3", name, description, now, id);
-        if (await cmd.ExecuteNonQueryAsync(token) != 1) throw new TemplateValidationException("This template is no longer available."); await tx.CommitAsync(token);
+        if (await cmd.ExecuteNonQueryAsync(token) != 1) throw new TemplateValidationException("This template is no longer available.");
+        await SqliteAuditWriter.Append(c, tx, workspace, AuditProjection.Template(before), AuditProjection.Template(await Read(c, tx, id, token)), token, AuditAction.TemplateUpdated);
+        await tx.CommitAsync(token);
     }
     public async Task DeleteAsync(WorkspaceContext workspace, Guid id, CancellationToken token)
-    { await using var c = await Open(workspace, token); using var cmd = Command(c, null, "DELETE FROM Templates WHERE Id=$p0", id); await cmd.ExecuteNonQueryAsync(token); }
+    {
+        await using var c = await Open(workspace, token); using var tx = c.BeginTransaction(deferred: false);
+        using var exists = Command(c, tx, "SELECT count(*) FROM Templates WHERE Id=$p0", id);
+        if ((long)(await exists.ExecuteScalarAsync(token))! == 0) return;
+        var before = await Read(c, tx, id, token);
+        using var cmd = Command(c, tx, "DELETE FROM Templates WHERE Id=$p0", id); await cmd.ExecuteNonQueryAsync(token);
+        await SqliteAuditWriter.Append(c, tx, workspace, AuditProjection.Template(before), [], token);
+        await tx.CommitAsync(token);
+    }
 }

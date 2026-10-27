@@ -49,7 +49,7 @@ public sealed partial class TrackerTests
         await initializer.InitializeAsync(legacy, false); await initializer.InitializeAsync(legacy, false);
         foreach (var (table, rows) in before.Where(p => p.Key != "SchemaMigrations")) Assert.Equal(rows, await TableRows(legacy, table));
         foreach (var (file, data) in bytes) Assert.Equal(data, File.ReadAllBytes(file));
-        Assert.Equal(20L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(21L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
         Assert.Equal(18L, await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';", legacy));
         Assert.Equal(3L, await Sql("SELECT COUNT(*) FROM Templates;", legacy));
         Assert.Equal(0L, await Sql("SELECT COUNT(*) FROM PageTemplateDefinitions;", legacy));
@@ -65,7 +65,7 @@ public sealed partial class TrackerTests
         SameDatabase(before, await PageTemplateDatabase(legacy)); Assert.Equal(schema, await TableRows(legacy, "sqlite_master"));
         Assert.Null(await Sql("PRAGMA foreign_key_check;", legacy));
         await Sql("DROP TABLE PageTemplateDefinitions;", legacy); await initializer.InitializeAsync(legacy, false);
-        Assert.Equal(3L, await Sql("SELECT COUNT(*) FROM Templates;", legacy)); Assert.Equal(20L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
+        Assert.Equal(3L, await Sql("SELECT COUNT(*) FROM Templates;", legacy)); Assert.Equal(21L, await Sql("SELECT COUNT(*) FROM SchemaMigrations;", legacy));
     }
     [Fact]
     public async Task PageTemplateDatabaseOwnershipGuardsRejectCrossTemplateRelationshipsAndWrongSourceTypes()

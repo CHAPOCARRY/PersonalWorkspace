@@ -30,6 +30,8 @@ public sealed partial class ShellViewModel : ObservableObject
     public PageWorkspaceViewModel Pages { get; }
     public ListWorkspaceViewModel Lists { get; }
     public TemplateWorkspaceViewModel Templates { get; }
+    public ActivityHistoryViewModel History { get; }
+    public bool ShowHistory => Profiles.ShowPlaceholder && History.IsArea;
     public bool ShowTemplates => Profiles.ShowPlaceholder && Templates.IsArea;
     public bool ShowLists => Profiles.ShowPlaceholder && Lists.IsArea;
     public bool ShowPages => Profiles.ShowPlaceholder && Pages.IsArea;
@@ -38,10 +40,10 @@ public sealed partial class ShellViewModel : ObservableObject
     public bool ShowCalendar => Profiles.ShowPlaceholder && Calendar.IsCalendarArea;
     public Guid? ActiveSpaceId => navigation.Current.Destination == "Space" && Guid.TryParse(navigation.Current.EntityId, out var id) ? id : null;
     public bool ShowOrganization => Profiles.ShowPlaceholder && navigation.Current.Destination == "Organization";
-    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea && !Trackers.IsArea && !Journals.IsArea && !Pages.IsArea && !Lists.IsArea && !Templates.IsArea;
+    public bool ShowPlaceholder => Profiles.ShowPlaceholder && !Tasks.IsTaskArea && !ShowOrganization && !Calendar.IsCalendarArea && !Trackers.IsArea && !Journals.IsArea && !Pages.IsArea && !Lists.IsArea && !Templates.IsArea && !History.IsArea;
     public bool ShowTasks => Profiles.ShowPlaceholder && Tasks.IsTaskArea;
 
-    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar, TrackerWorkspaceViewModel trackers, JournalWorkspaceViewModel journals, PageWorkspaceViewModel pages, ListWorkspaceViewModel lists, TemplateWorkspaceViewModel templates)
+    public ShellViewModel(ISettingsService settings, INavigationService navigation, ILogger<ShellViewModel> logger, ProfilesViewModel profiles, TaskWorkspaceViewModel tasks, OrganizationViewModel organization, CalendarViewModel calendar, TrackerWorkspaceViewModel trackers, JournalWorkspaceViewModel journals, PageWorkspaceViewModel pages, ListWorkspaceViewModel lists, TemplateWorkspaceViewModel templates, ActivityHistoryViewModel history)
     {
         this.settings = settings;
         this.navigation = navigation;
@@ -50,7 +52,7 @@ public sealed partial class ShellViewModel : ObservableObject
         Tasks = tasks;
         Organization = organization;
         Calendar = calendar;
-        Trackers = trackers; Journals = journals; Pages = pages; Lists = lists; Templates = templates;
+        Trackers = trackers; Journals = journals; Pages = pages; Lists = lists; Templates = templates; History = history;
         Profiles.PropertyChanged += (_, _) => NotifyContent();
         Tasks.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(Tasks.IsTaskArea)) NotifyContent(); };
         navigation.Changed += (_, _) => UpdateDestination();
@@ -127,6 +129,7 @@ public sealed partial class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowPages));
         OnPropertyChanged(nameof(ShowLists));
         OnPropertyChanged(nameof(ShowTemplates));
+        OnPropertyChanged(nameof(ShowHistory));
     }
 
     public void ReportError(string message) => ErrorMessage = message;

@@ -184,7 +184,7 @@ public sealed class RecurrenceService(IRecurrenceRepository repository, ICurrent
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
         try
         {
-            return await repository.TransactAsync<T>(new(profile,database),query,state =>
+            return await repository.TransactAsync<T>(new WorkspaceContext(profile,database) { Audit = AuditOperation.User() },query,state =>
             {
                 var result = operation(state);
                 return () =>

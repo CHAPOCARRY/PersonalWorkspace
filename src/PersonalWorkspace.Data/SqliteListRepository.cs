@@ -98,6 +98,7 @@ public sealed class SqliteListRepository : IListRepository
         using var transaction = connection.BeginTransaction(deferred: false);
         var state = new ListState(id is { } list ? await Read(connection, transaction, list, token) : null);
         var oldLists = state.Lists.ToDictionary(); var oldItems = state.Items.ToDictionary(); var result = change(state);
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, oldLists.Keys.Except(state.Lists.Keys), token);
         foreach (var definition in state.Lists.Values)
         {
             var old = oldLists.GetValueOrDefault(definition.Item.Id); if (old == definition) continue;
@@ -144,6 +145,7 @@ public sealed class SqliteListRepository : IListRepository
             command.CommandText = "DELETE FROM WorkspaceItems WHERE Id=$id AND ItemType=6 AND DeletedAtUtc IS NOT NULL;"; Add(command, "$id", removed);
             if (await command.ExecuteNonQueryAsync(token) != 1) throw new ListValidationException("Move the List to Trash before permanently deleting it.");
         }
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [.. AuditProjection.Lists(oldLists.Values, oldItems.Values), .. consequences.Before], [.. AuditProjection.Lists(state.Lists.Values, state.Items.Values), .. await consequences.After()], token);
         await transaction.CommitAsync(token); return result;
     }
     private static string? Text(SqliteDataReader reader, int index) => reader.IsDBNull(index) ? null : reader.GetString(index);

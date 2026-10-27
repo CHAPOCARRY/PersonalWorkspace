@@ -80,7 +80,7 @@ public sealed class PageService(IPageRepository repository, ICurrentProfile curr
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profile, database)); }
+        try { return await action(new WorkspaceContext(profile, database) { Audit = AuditOperation.User() }); }
         catch (PageValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception) { logger.LogError(exception, "Page operation failed in profile {ProfileId}", profile); throw new PageOperationException("The Page could not be loaded or saved. Check access to the workspace and try again.", exception); }

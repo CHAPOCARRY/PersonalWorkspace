@@ -36,7 +36,12 @@ public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceR
         var graph = await ReadGraphAsync(connection, transaction, cancellationToken);
         var original = graph.Tasks.ToDictionary(); var dependencies = graph.Dependencies.ToArray();
         var result = change(graph);
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, original.Keys.Except(graph.Tasks.Keys), cancellationToken);
         await PersistGraphAsync(connection, transaction, graph, original, dependencies, cancellationToken);
+        var auditBefore = AuditProjection.Tasks(original.Values, dependencies); auditBefore.AddRange(consequences.Before);
+        var auditAfter = AuditProjection.Tasks(graph.Tasks.Values, graph.Dependencies); auditAfter.AddRange(await consequences.After());
+        if (result is TaskItem primary) workspace = workspace with { Audit = (workspace.Audit ?? AuditOperation.User()) with { Primary = new(AuditEntityType.Task, primary.Item.Id, primary.Item.Title) } };
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, auditAfter, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return result;
     }
@@ -165,6 +170,7 @@ public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceR
         Bind(command, task);
         await command.ExecuteNonQueryAsync(cancellationToken);
         if (task.Value is not null) await SaveValueAsync(connection, transaction, task, cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [], AuditProjection.Tasks([task]), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -192,6 +198,7 @@ public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceR
             await command.ExecuteNonQueryAsync(cancellationToken);
             if (existing.Value != task.Value) await SaveValueAsync(connection, transaction, task, cancellationToken);
         }
+        await SqliteAuditWriter.Append(connection, transaction, workspace, AuditProjection.Tasks([existing]), AuditProjection.Tasks([task]), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return task;
     }
@@ -203,11 +210,13 @@ public sealed partial class SqliteTaskRepository : ITaskRepository, IRecurrenceR
         var task = await FindAsync(connection, transaction, id, cancellationToken)
             ?? throw new TaskValidationException("This task is no longer available.");
         if (task.Item.DeletedAtUtc is null) throw new TaskValidationException("Move the task to Trash before permanently deleting it.");
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, [id], cancellationToken);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "DELETE FROM WorkspaceItems WHERE Id = $id AND ItemType = 1;";
         command.Parameters.AddWithValue("$id", id.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken); // Foreign-key cascade removes the Task row in the same transaction.
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [.. AuditProjection.Tasks([task]), .. consequences.Before], await consequences.After(), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 

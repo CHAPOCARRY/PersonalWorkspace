@@ -52,6 +52,7 @@ public sealed class SqliteEventRepository : IEventRepository
             """;
         Bind(command, item);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [], AuditProjection.Event(item), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
     public async Task<EventItem> UpdateAsync(WorkspaceContext workspace, Guid id, Func<EventItem, EventItem> update, CancellationToken cancellationToken)
@@ -71,6 +72,7 @@ public sealed class SqliteEventRepository : IEventRepository
             Bind(command, item);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
+        await SqliteAuditWriter.Append(connection, transaction, workspace, AuditProjection.Event(previous), AuditProjection.Event(item), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return item;
     }
@@ -80,10 +82,12 @@ public sealed class SqliteEventRepository : IEventRepository
         using var transaction = connection.BeginTransaction(deferred: false);
         var item = await FindAsync(connection, transaction, id, cancellationToken) ?? throw new EventValidationException("This event is no longer available.");
         if (item.Item.DeletedAtUtc is null) throw new EventValidationException("Move the event to Trash before permanently deleting it.");
+        var consequences = await AuditConsequences.ForDeletedItems(connection, transaction, [id], cancellationToken);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "DELETE FROM WorkspaceItems WHERE Id = $id AND ItemType = 2;";
         command.Parameters.AddWithValue("$id", id.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, [.. AuditProjection.Event(item), .. consequences.Before], await consequences.After(), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
     private static async Task<EventItem?> FindAsync(SqliteConnection connection, SqliteTransaction? transaction, Guid id, CancellationToken cancellationToken)

@@ -19,7 +19,7 @@ public sealed class JournalService(IJournalRepository repository, ICurrentProfil
         (await repository.ReadAsync(workspace, reference.ItemId, JournalCollection.Active, null, null, token)).Journals.SingleOrDefault()
             ?? throw new JournalValidationException("This Journal is no longer available."), token);
     public Task<JournalDefinition> CreateAsync(Guid profileId, string title, string description = "", CancellationToken token = default) => CreateDefinitionAsync(profileId, title, description, [], token);
-    public Task<JournalDefinition> CreateDefinitionAsync(Guid profileId, string title, string description, IReadOnlyList<JournalFieldDraft> fields, CancellationToken token = default) => Run(profileId, async workspace =>
+    public Task<JournalDefinition> CreateDefinitionAsync(Guid profileId, string title, string description, IReadOnlyList<JournalFieldDraft> fields, CancellationToken token = default, AuditOperation? audit = null) => Run(profileId, async workspace =>
     {
         var now = clock.GetUtcNow(); var definition = new JournalDefinition(new(Guid.NewGuid(), WorkspaceItemType.Journal, JournalRules.Name(title), now, now, null, null), Description(description), []);
         definition = definition with { Fields = fields.Select((input, index) =>
@@ -28,7 +28,7 @@ public sealed class JournalService(IJournalRepository repository, ICurrentProfil
             return new JournalField(Guid.NewGuid(), definition.Item.Id, field.Name, field.Type, index, field.CurrencyCode, field.ScaleMin, field.ScaleMax,
                 Options: field.Options!.Select(o => o with { Id = Guid.NewGuid(), HasValues = false }).ToArray());
         }).ToArray() };
-        await repository.CreateAsync(workspace, definition, token); return definition;
+        await repository.CreateAsync(workspace with { Audit = audit ?? workspace.Audit }, definition, token); return definition;
     }, token);
     public Task<JournalDefinition> UpdateAsync(WorkspaceItemReference reference, string title, string description, CancellationToken token = default) => Change(reference, state =>
     {
@@ -114,7 +114,7 @@ public sealed class JournalService(IJournalRepository repository, ICurrentProfil
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profileId || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profileId, database)); }
+        try { return await action(new WorkspaceContext(profileId, database) { Audit = AuditOperation.User() }); }
         catch (JournalValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception) { logger.LogError(exception, "Journal operation failed in profile {ProfileId}", profileId); throw new JournalOperationException("The Journal could not be loaded or saved. Check access to the local workspace and try again.", exception); }

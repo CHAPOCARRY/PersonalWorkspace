@@ -28,7 +28,10 @@ public sealed class SqliteCanvasRepository : ICanvasRepository
     {
         await using var connection = await SqliteConnectionFactory.OpenDatabaseAsync(workspace.DatabasePath, false, token); using var transaction = connection.BeginTransaction(deferred: false);
         var before = await Read(connection, transaction, pageId, token); var after = edit(before);
+        var removesContent = before.Items.Any(i => !after.Items.Any(a => a.Id == i.Id));
+        var auditBefore = removesContent ? await AuditConsequences.PageContents(connection, transaction, pageId, token) : AuditProjection.Canvas(before);
         await Write(connection, transaction, pageId, before, after, token);
+        await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, removesContent ? await AuditConsequences.PageContents(connection, transaction, pageId, token) : AuditProjection.Canvas(after), token);
         await transaction.CommitAsync(token); return after;
     }
     // Shared transaction boundary for operations that attach content to generic layout items.

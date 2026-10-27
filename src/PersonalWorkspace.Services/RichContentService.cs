@@ -27,7 +27,7 @@ public sealed class RichContentService(IRichContentRepository repository, ICurre
     {
         using var lease = await gate.EnterAsync(token);
         if (current.Current?.Id != profile || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profile, database)); }
+        try { return await action(new WorkspaceContext(profile, database) { Audit = AuditOperation.User() }); }
         catch (ContentValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception e) { logger.LogError(e, "Rich content operation failed in profile {ProfileId}", profile); throw new ContentOperationException("Rich content could not be loaded or saved. Check workspace access and retry.", e); }

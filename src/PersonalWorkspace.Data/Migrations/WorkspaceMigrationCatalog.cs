@@ -240,6 +240,7 @@ public static class WorkspaceMigrationCatalog
         DecorationMigration.Definition,
         TemplateMigration.Definition,
         PageTemplateMigration.Definition,
-        SearchMigration.Definition
+        SearchMigration.Definition,
+        ActivityHistoryMigration.Definition
     ];
 }

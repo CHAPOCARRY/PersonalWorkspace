@@ -33,12 +33,12 @@ public sealed partial class RecurrenceTests
         {
             var task=new TaskItem(new(Guid.NewGuid(),WorkspaceItemType.Task,type.ToString(),clock.GetUtcNow(),clock.GetUtcNow(),null,null),"",TaskStatus.ToDo,TaskPriority.None,null,
                 Value:type==TaskValueType.Checkbox?null:new TaskValue(type,20,CurrencyCode:"EUR",Unit:"pages").Validate());
-            await repository.CreateAsync(context,task,default); var segment=Guid.NewGuid(); var occurrence=Guid.NewGuid(); identities.Add((task.Item.Id,occurrence));
+            await LegacyWorkspaceFixture.CreateTask(context,task); var segment=Guid.NewGuid(); var occurrence=Guid.NewGuid(); identities.Add((task.Item.Id,occurrence));
             await Sql($"INSERT INTO TaskRecurrenceRules VALUES ('{segment}','{task.Item.Id}',0,'2026-10-01',1,0,1,1,1,NULL,'2026-10-01',NULL,1,'2026-10-01T00:00:00+00:00');"+
                 $"INSERT INTO TaskOccurrences VALUES ('{occurrence}','{task.Item.Id}','{segment}','2026-10-01','2026-10-02',1,{(type==TaskValueType.Checkbox?"NULL":"'18'")},0,1,0,'2026-10-01T00:00:00+00:00','2026-10-01T01:00:00+00:00');",legacy);
         }
         await initializer.InitializeAsync(legacy,false); await initializer.InitializeAsync(legacy,false);
-        Assert.Equal(20L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy)); Assert.Equal(6L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
+        Assert.Equal(21L,await Sql("SELECT COUNT(*) FROM SchemaMigrations;",legacy)); Assert.Equal(6L,await Sql("SELECT COUNT(*) FROM SchemaMigrations WHERE AppliedAtUtc='original';",legacy));
         Assert.Equal(5L,await Sql("SELECT COUNT(*) FROM TaskOccurrenceCalculations WHERE BaseTarget='20' AND CarryIn='0' AND EffectiveTarget='20' AND CarryOut='0';",legacy));
         Assert.Equal(4L,await Sql("SELECT COUNT(*) FROM TaskCarrySettings WHERE CarryDeficit=0 AND CarrySurplus=0 AND HistoryLocked=1;",legacy));
         foreach(var (task,id) in identities)

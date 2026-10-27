@@ -80,7 +80,7 @@ public sealed class EventService(IEventRepository repository, ICurrentProfile cu
     {
         using var lease = await gate.EnterAsync(cancellationToken);
         if (current.Current?.Id != profileId || current.WorkspaceDatabase is not { } database) throw new WorkspaceChangedException();
-        try { return await action(new(profileId, database)); }
+        try { return await action(new WorkspaceContext(profileId, database) { Audit = AuditOperation.User() }); }
         catch (EventValidationException) { throw; }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)

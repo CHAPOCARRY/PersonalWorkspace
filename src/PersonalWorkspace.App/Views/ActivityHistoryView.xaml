@@ -1,0 +1,52 @@
+<UserControl x:Class="PersonalWorkspace.App.Views.ActivityHistoryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="{StaticResource ContentPadding}" RowSpacing="{StaticResource Space12}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel><TextBlock Text="Activity history" Style="{ThemeResource TitleTextBlockStyle}"/>
+                <TextBlock Text="Committed changes in this Profile" Foreground="{ThemeResource TextSecondary}"/></StackPanel>
+            <Button Grid.Column="1" Content="Clear history…" Click="ClearHistory" IsEnabled="{Binding IsIdle}" AutomationProperties.AutomationId="ClearActivityHistory"/>
+        </Grid>
+        <StackPanel Grid.Row="1" Spacing="{StaticResource Space8}">
+          <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+           <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+            <CalendarDatePicker x:Name="FromPicker" Header="From" PlaceholderText="Any date" DateChanged="FromChanged"/>
+            <Button Content="Clear" AutomationProperties.Name="Clear From date" Click="ClearFrom" VerticalAlignment="Bottom"/>
+            <CalendarDatePicker x:Name="ThroughPicker" Header="Through" PlaceholderText="Any date" DateChanged="ThroughChanged"/>
+            <Button Content="Clear" AutomationProperties.Name="Clear Through date" Click="ClearThrough" VerticalAlignment="Bottom"/>
+            <ComboBox Header="Entity" ItemsSource="{Binding EntityTypes}" SelectedItem="{Binding EntityType, Mode=TwoWay}" MinWidth="120"/>
+            <ComboBox Header="Action" ItemsSource="{Binding Actions}" SelectedItem="{Binding Action, Mode=TwoWay}" MinWidth="150"/>
+           </StackPanel>
+          </ScrollViewer>
+          <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}">
+            <TextBox Header="Title begins with" Text="{Binding TitlePrefix, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="180"/>
+            <Button Content="Apply" Click="Refresh" VerticalAlignment="Bottom" IsEnabled="{Binding IsIdle}"/>
+            <Button Content="Reset" Click="Reset" VerticalAlignment="Bottom" IsEnabled="{Binding IsIdle}"/>
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Grid.Row="2" Spacing="{StaticResource Space8}"><TextBlock Text="{Binding TargetFilterLabel}"/><TextBlock Text="{Binding Status}" TextWrapping="Wrap"/><ProgressBar IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"/></StackPanel>
+        <Grid Grid.Row="3" ColumnSpacing="{StaticResource Space12}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <ListView ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected, Mode=TwoWay}" AutomationProperties.Name="Activity timeline">
+                    <ListView.ItemTemplate><DataTemplate><StackPanel Spacing="{StaticResource Space8}" Padding="8">
+                        <TextBlock Text="{Binding Day}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding Time}" Foreground="{ThemeResource TextSecondary}"/>
+                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Context}" Foreground="{ThemeResource TextSecondary}"/>
+                    </StackPanel></DataTemplate></ListView.ItemTemplate>
+                </ListView>
+                <Button Grid.Row="1" Content="Load more" Click="More" IsEnabled="{Binding IsIdle}" Visibility="{Binding HasMore, Converter={StaticResource BoolVisibility}}"/>
+            </Grid>
+            <ScrollViewer Grid.Column="1"><StackPanel Spacing="{StaticResource Space12}">
+                <TextBlock Text="Activity details" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                <TextBlock Text="{Binding DetailContext}" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding TargetStatus}" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space8}"><Button Content="{Binding OpenLabel}" Click="Open" IsEnabled="{Binding CanOpen}"/><Button Content="History for this target" Click="FilterTarget" IsEnabled="{Binding IsIdle}"/></StackPanel>
+                <ItemsControl ItemsSource="{Binding Changes}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,8"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <Button Content="More changes" Click="MoreChanges" IsEnabled="{Binding IsIdle}" Visibility="{Binding HasMoreChanges, Converter={StaticResource BoolVisibility}}"/>
+                <TextBlock Text="Text bodies are omitted. History cannot restore an earlier version. Captured labels and scalar values remain until you clear this Profile’s history." TextWrapping="Wrap" Foreground="{ThemeResource TextSecondary}"/>
+            </StackPanel></ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

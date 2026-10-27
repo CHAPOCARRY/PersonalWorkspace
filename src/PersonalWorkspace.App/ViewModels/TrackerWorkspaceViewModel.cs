@@ -33,7 +33,8 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
         Analytics = analytics;
         if (Analytics is not null) Analytics.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(TrackerAnalyticsViewModel.IsBusy)) Notify(); };
         observedProfile = current.Current?.Id;
-        navigation.Changed += (_, _) => { Notify(); _ = ReloadAsync(); };
+        auditNavigationPending = navigation.Current.Context?.PeriodDate is not null;
+        navigation.Changed += (_, _) => { auditNavigationPending = navigation.Current.Context?.PeriodDate is not null; Notify(); _ = ReloadAsync(); };
         current.Changed += (_, _) =>
         {
             if (observedProfile == current.Current?.Id) return;
@@ -42,6 +43,7 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
         };
     }
     private DateOnly Today => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+    private bool auditNavigationPending;
     public TrackerAnalyticsViewModel? Analytics { get; }
     public bool IsArea => navigation.Current.Destination is "Trackers" or "Tracker";
     public bool IsLibrary => navigation.Current.Destination == "Trackers";
@@ -80,6 +82,8 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
     public async Task ReloadAsync(bool preserveDraft = false)
     {
         var request = ++revision; var profile = current.Current?.Id; var route = navigation.Current;
+        var auditContext = auditNavigationPending ? route.Context : null;
+        auditNavigationPending = false;
         loading = true; Error = null; Notify();
         if (!preserveDraft)
         {
@@ -89,6 +93,7 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
         try
         {
             if (profile is null) { Clear(); return; }
+            if (route.Context is { } context && context.ProfileId != profile) throw new WorkspaceChangedException();
             if (!IsEditor || IsNew) Analytics?.Clear();
             if (IsLibrary || IsSection)
             {
@@ -107,11 +112,15 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
                 {
                     var r = new WorkspaceItemReference(profile.Value, id);
                     var item = await service.FindAsync(r) ?? throw new TrackerValidationException("This Tracker is no longer available.");
-                    var recent = await service.GetEntriesAsync(r, historyPeriod is { } history ? new(Period: history) : new(Recent: 50));
+                    var auditChild = auditContext?.ChildId;
+                    var requestedPeriod = auditContext?.PeriodDate ?? historyPeriod;
+                    var recent = await service.GetEntriesAsync(r, requestedPeriod is { } history ? new(Period: history) : new(Recent: 50));
+                    if (auditChild is { } selectedEntry && !recent.Any(e => e.Id == selectedEntry)) throw new TrackerValidationException("This historical entry is no longer available.");
                     var period = item.Schedule.PeriodOn(Today);
                     var summary = period is { } date ? await service.GetPeriodAsync(r, date) : null;
                     var catalog = await organization.GetAsync(profile.Value);
                     if (request != revision) return;
+                    historyPeriod = requestedPeriod; HistoryDate = historyPeriod is { } p ? TrackerEditor.Picker(p) : null;
                     detail = item; reference = r; editorProfile = profile;
                     if (!preserveDraft) { Editor = new(); Editor.Load(item.Draft, item.HasEntries); }
                     else Editor.Locked = item.HasEntries;
@@ -121,6 +130,7 @@ public sealed partial class TrackerWorkspaceViewModel : ObservableObject
                         .Concat(catalog.Spaces.Where(s => s.ArchivedAtUtc is null || catalog.ItemSpaces.Contains(new(id, s.Id))).Select(s =>
                             new OrganizationChoice(r, s.Id, OrganizationKind.Space, s.Name, s.Color, catalog.ItemSpaces.Contains(new(id, s.Id)), s.ArchivedAtUtc is not null))).ToArray();
                     if (!preserveDraft) ResetEntry();
+                    if (auditChild is { } entryId) EditEntry(Entries.Single(e => e.Entry.Id == entryId));
                     if (Analytics is not null) await Analytics.SetTrackerAsync(r);
                 }
             }

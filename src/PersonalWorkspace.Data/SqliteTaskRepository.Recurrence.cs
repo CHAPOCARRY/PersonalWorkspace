@@ -55,6 +55,7 @@ public sealed partial class SqliteTaskRepository
         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             while (await reader.ReadAsync(cancellationToken)) state.CarryPolicies.Add(Guid.Parse(reader.GetString(0)),new(reader.GetBoolean(1),reader.GetBoolean(2),reader.GetBoolean(3)));
         var policies = state.CarryPolicies.ToDictionary();
+        var auditBefore = query.From is null ? AuditProjection.Recurrence(state, query) : [];
         var finish = change(state);
         // Only actual mutations request a chain read. Ordinary Today/Calendar refreshes stay range-scoped.
         foreach (var (task, affected) in state.Recalculation)
@@ -138,6 +139,14 @@ public sealed partial class SqliteTaskRepository
             }
         }
         await PersistGraphAsync(connection, transaction, graph, originalTasks, dependencies, cancellationToken);
+        // Range materialization is the documented internal system path. Explicit edits have no range.
+        if (query.From is null)
+        {
+            var after = AuditProjection.Recurrence(state, query);
+            var primary = after.Concat(auditBefore).FirstOrDefault(e => e.Target.Id == (query.OccurrenceId ?? query.TaskId))?.Target;
+            workspace = workspace with { Audit = (workspace.Audit ?? AuditOperation.User()) with { Primary = primary } };
+            await SqliteAuditWriter.Append(connection, transaction, workspace, auditBefore, after, cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
         return result;
     }
